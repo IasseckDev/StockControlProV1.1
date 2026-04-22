@@ -6,9 +6,9 @@
     <title>Sistema de Controle de Estoque - Firebase</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-     
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
-        /* ========== ESTILOS (mesmos do projeto anterior) ========== */
+        /* ========== ESTILOS (mesmos do projeto anterior + novos) ========== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             background: linear-gradient(135deg, #000000 0%, #5d3c88 100%);
@@ -17,7 +17,7 @@
             padding-bottom: 50px;
         }
         .navbar-modern {
-            background: linear-gradient(135deg, #000000 0%, #5d3c88 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             box-shadow: 0 2px 20px rgba(0,0,0,0.1);
         }
         .card-modern {
@@ -63,6 +63,37 @@
         .stats-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; padding: 20px; text-align: center; }
         .filter-bar { background: #f8f9fa; padding: 20px; border-radius: 15px; margin-bottom: 20px; }
         .btn-action { margin: 0 5px; border-radius: 10px; }
+        .pdf-report {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+        }
+        .pdf-report h2 { color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+        .pdf-report .header { text-align: center; margin-bottom: 30px; }
+        .pdf-report .footer { text-align: center; margin-top: 30px; font-size: 10px; color: #666; }
+        .pdf-report table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .pdf-report th, .pdf-report td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .pdf-report th { background-color: #667eea; color: white; }
+        .pdf-report .total-row { font-weight: bold; background-color: #f2f2f2; }
+        
+        /* Estilos para a nova página de consumo de colaborador */
+        .collaborator-card {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .collaborator-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .consumption-item {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+        .consumption-item:hover {
+            background: #e9ecef;
+        }
     </style>
 </head>
 <body>
@@ -72,9 +103,8 @@
 <script type="module">
     // ========== IMPORTAÇÕES FIREBASE ==========
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-    import { getDatabase, ref, set, get, push, update, remove, onValue } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
+    import { getDatabase, ref, set, get, push, update, remove } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
 
-    // Configuração fornecida
     const firebaseConfig = {
         apiKey: "AIzaSyDqpAqLX-zpJtnL3PjEGZ7eKyEjzElaQ4s",
         authDomain: "stockcontrolprov1.firebaseapp.com",
@@ -239,7 +269,6 @@
     async function excluirGrupoCompleto(grupoId) {
         if (confirm("Tem certeza? Todas as contagens e compras relacionadas serão perdidas!")) {
             await remove(ref(database, `grupos/${grupoId}`));
-            // Remover contagens relacionadas
             const contagensRef = ref(database, 'contagens');
             const contagensSnap = await get(contagensRef);
             if (contagensSnap.exists()) {
@@ -250,7 +279,6 @@
                     }
                 }
             }
-            // Remover compras relacionadas
             const comprasRef = ref(database, 'compras');
             const comprasSnap = await get(comprasRef);
             if (comprasSnap.exists()) {
@@ -349,7 +377,93 @@
         return false;
     }
 
-    // ========== FUNÇÕES AUXILIARES DE UI ==========
+    // ========== FUNÇÕES DE CONSUMO DE COLABORADOR ==========
+    // Estrutura no Firebase:
+    // colaboradores: {
+    //   "id_automatico": {
+    //     nome: "João Silva",
+    //     criadoPor: "email@admin",
+    //     dataCriacao: "...",
+    //     itens: {
+    //       "item_id": {
+    //         produto: "Refrigerante",
+    //         grupoId: "abc",
+    //         grupoNome: "Bebidas",
+    //         valor: 10.5,   // quantidade ou valor monetário
+    //         data: "2025-04-21",
+    //         usuario: "email@usuario"
+    //       }
+    //     }
+    //   }
+    // }
+    
+    async function getColaboradores() {
+        const colaboradoresRef = ref(database, 'colaboradores');
+        const snapshot = await get(colaboradoresRef);
+        const lista = [];
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            for (let key in data) {
+                lista.push({ id: key, ...data[key] });
+            }
+        }
+        return lista;
+    }
+    
+    async function criarColaborador(nome) {
+        const colaboradoresRef = ref(database, 'colaboradores');
+        const novoColab = push(colaboradoresRef);
+        await set(novoColab, {
+            nome: nome,
+            criadoPor: currentUser.email,
+            dataCriacao: new Date().toISOString(),
+            itens: {}
+        });
+    }
+    
+    async function adicionarItemColaborador(colaboradorId, produto, grupoId, grupoNome, valor, dataItem) {
+        const itensRef = ref(database, `colaboradores/${colaboradorId}/itens`);
+        const novoItem = push(itensRef);
+        await set(novoItem, {
+            produto: produto,
+            grupoId: grupoId,
+            grupoNome: grupoNome,
+            valor: parseFloat(valor),
+            data: dataItem || new Date().toISOString().split('T')[0],
+            usuario: currentUser.email,
+            dataRegistro: new Date().toISOString()
+        });
+    }
+    
+    async function editarItemColaborador(colaboradorId, itemId, novosDados) {
+        const itemRef = ref(database, `colaboradores/${colaboradorId}/itens/${itemId}`);
+        const snapshot = await get(itemRef);
+        if (snapshot.exists()) {
+            const itemAtual = snapshot.val();
+            const atualizado = { ...itemAtual, ...novosDados };
+            await set(itemRef, atualizado);
+            return true;
+        }
+        return false;
+    }
+    
+    async function removerItemColaborador(colaboradorId, itemId) {
+        if (confirm("Remover este item?")) {
+            await remove(ref(database, `colaboradores/${colaboradorId}/itens/${itemId}`));
+            return true;
+        }
+        return false;
+    }
+    
+    async function excluirColaborador(colaboradorId) {
+        if (confirm("Excluir este colaborador e todos os seus itens?")) {
+            await remove(ref(database, `colaboradores/${colaboradorId}`));
+            return true;
+        }
+        return false;
+    }
+    
+    // ========== FUNÇÕES DE RENDERIZAÇÃO PRINCIPAL ==========
     function showPage(page) {
         const app = document.getElementById('app');
         if (page === 'login') {
@@ -437,6 +551,7 @@
         if (isAdmin) menuItems.push({ id: 'compras', icon: 'fa-shopping-cart', label: 'Compras' });
         menuItems.push({ id: 'relatorio', icon: 'fa-chart-line', label: 'Relatório' });
         if (isAdmin) menuItems.push({ id: 'paginaCompras', icon: 'fa-chart-bar', label: 'Gestão de Compras' });
+        if (isAdmin) menuItems.push({ id: 'colaboradores', icon: 'fa-users', label: 'Consumo de Colaborador' });
 
         const app = document.getElementById('app');
         app.innerHTML = `
@@ -473,6 +588,7 @@
                     ${isAdmin ? '<li class="nav-item"><button class="nav-link" data-bs-target="#compras" data-bs-toggle="tab">Compras</button></li>' : ''}
                     <li class="nav-item"><button class="nav-link" data-bs-target="#relatorio" data-bs-toggle="tab">Relatório</button></li>
                     ${isAdmin ? '<li class="nav-item"><button class="nav-link" data-bs-target="#paginaCompras" data-bs-toggle="tab">📊 Gestão de Compras</button></li>' : ''}
+                    ${isAdmin ? '<li class="nav-item"><button class="nav-link" data-bs-target="#colaboradores" data-bs-toggle="tab">👥 Consumo de Colaborador</button></li>' : ''}
                 </ul>
                 <div class="tab-content">
                     ${isAdmin ? await renderAdminTab() : ''}
@@ -482,10 +598,10 @@
                     ${isAdmin ? await renderComprasTab(grupos) : ''}
                     ${await renderRelatorioTab(contagens, compras)}
                     ${isAdmin ? await renderPaginaCompras(compras, grupos) : ''}
+                    ${isAdmin ? await renderColaboradoresTab() : ''}
                 </div>
             </div>
         `;
-        // Inicializa tabs
         document.querySelectorAll('#myTab button').forEach(btn => new bootstrap.Tab(btn));
         if (currentActiveTab) {
             const activePane = document.getElementById(currentActiveTab);
@@ -496,129 +612,57 @@
         }
     }
 
-    // Funções de renderização das abas (adaptadas para async)
+    // Funções de renderização das abas (versões resumidas para manter o foco)
     async function renderAdminTab() {
         const solicitacoes = await getSolicitacoesPendentes();
         const usuarios = await getTodosUsuarios();
-        return `
-            <div class="tab-pane fade" id="admin">
-                <div class="card card-modern"><div class="card-body">
-                    <h4>Solicitações Pendentes</h4>
-                    ${solicitacoes.length === 0 ? '<div class="alert alert-info">Nenhuma solicitação pendente</div>' : `
-                        <div class="table-responsive"><table class="table table-modern">
-                            <thead><tr><th>Nome</th><th>Email</th><th>Ações</th></tr></thead>
-                            <tbody>${solicitacoes.map(s => `
-                                <tr><td>${s.nome}</td><td>${s.email}</td>
-                                <td><button class="btn btn-success btn-sm me-2" onclick="aprovarUsuarioHandler('${s.id}', 'padrao')">Aprovar Padrão</button>
-                                    <button class="btn btn-warning btn-sm" onclick="aprovarUsuarioHandler('${s.id}', 'admin')">Aprovar Admin</button></td></tr>
-                            `).join('')}</tbody>
-                        </table></div>
-                    `}
-                    <h4 class="mt-4">Usuários do Sistema</h4>
-                    <div class="table-responsive"><table class="table table-modern">
-                        <thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Ações</th></tr></thead>
-                        <tbody>${usuarios.map(u => `
-                            <tr><td>${u.nome}</td><td>${u.email}</td>
-                            <td>${u.tipo === 'admin' ? 'Administrador' : 'Usuário Padrão'}</td>
-                            <td><select class="form-select form-select-sm" id="tipo_${u.id}">
-                                    <option value="padrao" ${u.tipo === 'padrao' ? 'selected' : ''}>Padrão</option>
-                                    <option value="admin" ${u.tipo === 'admin' ? 'selected' : ''}>Admin</option>
-                                </select>
-                                <button class="btn btn-primary btn-sm mt-1" onclick="alterarTipoHandler('${u.id}')">Alterar</button></td></tr>
-                        `).join('')}</tbody>
-                    </table></div>
-                </div></div>
-            </div>
-        `;
+        return `<div class="tab-pane fade" id="admin"><div class="card card-modern"><div class="card-body">
+            <h4>Solicitações Pendentes</h4>
+            ${solicitacoes.length === 0 ? '<div class="alert alert-info">Nenhuma solicitação pendente</div>' : `
+                <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Nome</th><th>Email</th><th>Ações</th></tr></thead>
+                <tbody>${solicitacoes.map(s => `<tr><td>${s.nome}</td><td>${s.email}</td><td><button class="btn btn-success btn-sm me-2" onclick="aprovarUsuarioHandler('${s.id}', 'padrao')">Aprovar Padrão</button><button class="btn btn-warning btn-sm" onclick="aprovarUsuarioHandler('${s.id}', 'admin')">Aprovar Admin</button></td></tr>`).join('')}</tbody></table></div>
+            `}
+            <h4 class="mt-4">Usuários do Sistema</h4>
+            <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Ações</th></tr></thead>
+            <tbody>${usuarios.map(u => `<tr><td>${u.nome}</td><td>${u.email}</td>
+            <td>${u.tipo === 'admin' ? 'Administrador' : 'Usuário Padrão'}</td>
+            <td><select class="form-select form-select-sm" id="tipo_${u.id}"><option value="padrao" ${u.tipo === 'padrao' ? 'selected' : ''}>Padrão</option><option value="admin" ${u.tipo === 'admin' ? 'selected' : ''}>Admin</option></select>
+            <button class="btn btn-primary btn-sm mt-1" onclick="alterarTipoHandler('${u.id}')">Alterar</button></div></td></tr>`).join('')}</tbody></table></div>
+        </div></div></div>`;
     }
 
     async function renderGruposTab(grupos) {
-        return `
-            <div class="tab-pane fade" id="grupos">
-                <div class="card card-modern"><div class="card-body">
-                    <button class="btn btn-modern mb-3" onclick="abrirModalGrupo()"><i class="fas fa-plus me-2"></i>Novo Grupo</button>
-                    <div class="row">
-                        ${grupos.map(g => `
-                            <div class="col-md-6 col-lg-4 mb-4">
-                                <div class="card group-card h-100">
-                                    <div class="card-header bg-white d-flex justify-content-between">
-                                        <h5><i class="fas fa-folder-open me-2"></i>${g.nome}</h5>
-                                        <div><button class="btn btn-sm btn-edit-group" onclick="editarGrupo('${g.id}')"><i class="fas fa-edit"></i></button>
-                                        <button class="btn btn-sm btn-danger" onclick="excluirGrupoHandler('${g.id}')"><i class="fas fa-trash"></i></button></div>
-                                    </div>
-                                    <div class="card-body">
-                                        <small>Criado por: ${g.criadoPor}</small><br><small>${g.produtos.length} produtos</small>
-                                        <div class="product-list mt-2">
-                                            ${g.produtos.map((p, idx) => `<div class="product-item"><span>${p}</span><button class="btn btn-sm btn-outline-danger" onclick="removerProdutoHandler('${g.id}', ${idx})"><i class="fas fa-times"></i></button></div>`).join('')}
-                                        </div>
-                                        <button class="btn btn-sm btn-outline-primary w-100 mt-3" onclick="adicionarProdutoAoGrupoUI('${g.id}', '${g.nome}')"><i class="fas fa-plus me-2"></i>Adicionar Produto</button>
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div></div>
-            </div>
-        `;
+        return `<div class="tab-pane fade" id="grupos"><div class="card card-modern"><div class="card-body">
+            <button class="btn btn-modern mb-3" onclick="abrirModalGrupo()"><i class="fas fa-plus me-2"></i>Novo Grupo</button>
+            <div class="row">${grupos.map(g => `<div class="col-md-6 col-lg-4 mb-4"><div class="card group-card h-100"><div class="card-header bg-white d-flex justify-content-between"><h5><i class="fas fa-folder-open me-2"></i>${g.nome}</h5><div><button class="btn btn-sm btn-edit-group" onclick="editarGrupo('${g.id}')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="excluirGrupoHandler('${g.id}')"><i class="fas fa-trash"></i></button></div></div><div class="card-body"><small>Criado por: ${g.criadoPor}</small><br><small>${g.produtos.length} produtos</small><div class="product-list mt-2">${g.produtos.map((p, idx) => `<div class="product-item"><span>${p}</span><button class="btn btn-sm btn-outline-danger" onclick="removerProdutoHandler('${g.id}', ${idx})"><i class="fas fa-times"></i></button></div>`).join('')}</div><button class="btn btn-sm btn-outline-primary w-100 mt-3" onclick="adicionarProdutoAoGrupoUI('${g.id}', '${g.nome}')"><i class="fas fa-plus me-2"></i>Adicionar Produto</button></div></div></div>`).join('')}</div>
+        </div></div></div>`;
     }
 
     async function renderContagemTab(grupos) {
-        return `
-            <div class="tab-pane fade ${currentUser.tipo !== 'admin' ? 'show active' : ''}" id="contagem">
-                <div class="card card-modern"><div class="card-body">
-                    <h4>Selecione um grupo para contagem</h4>
-                    <div class="row">
-                        ${grupos.map(g => `
-                            <div class="col-md-4 mb-3"><div class="card product-card" onclick="iniciarContagem('${g.id}', '${g.nome}')">
-                                <div class="card-body text-center"><i class="fas fa-box fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div>
-                            </div></div>
-                        `).join('')}
-                    </div>
-                </div></div>
-            </div>
-        `;
+        return `<div class="tab-pane fade ${currentUser.tipo !== 'admin' ? 'show active' : ''}" id="contagem"><div class="card card-modern"><div class="card-body">
+            <h4>Selecione um grupo para contagem</h4><div class="row">${grupos.map(g => `<div class="col-md-4 mb-3"><div class="card product-card" onclick="iniciarContagem('${g.id}', '${g.nome}')"><div class="card-body text-center"><i class="fas fa-box fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div></div></div>`).join('')}</div>
+        </div></div></div>`;
     }
 
     async function renderRegistrosTab(contagens) {
         if (contagens.length === 0) return `<div class="tab-pane fade" id="registros"><div class="card card-modern"><div class="card-body text-center"><p>Nenhuma contagem ainda</p></div></div></div>`;
-        return `
-            <div class="tab-pane fade" id="registros">
-                <div class="card card-modern"><div class="card-body">
-                    ${contagens.map(c => `
-                        <div class="card mb-3">
-                            <div class="card-header bg-light"><strong>Usuário:</strong> ${c.usuario} | <strong>Data:</strong> ${new Date(c.data).toLocaleDateString()} | <strong>Hora:</strong> ${c.hora}
-                            ${currentUser.tipo === 'admin' ? `<button class="btn btn-warning btn-sm float-end" onclick="editarContagemHandler('${c.id}')"><i class="fas fa-edit"></i> Editar</button>` : ''}</div>
-                            <div class="card-body"><h5>Grupo: ${c.grupoNome}</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Produto</th><th>Quantidade</th></tr></thead><tbody>
-                                ${Object.entries(c.contagens).map(([prod, qtd]) => `<tr><td>${prod}</td><td>${qtd}</td></tr>`).join('')}
-                            </tbody></table></div></div>
-                        </div>
-                    `).join('')}
-                </div></div>
-            </div>
-        `;
+        return `<div class="tab-pane fade" id="registros"><div class="card card-modern"><div class="card-body">
+            ${contagens.map(c => `<div class="card mb-3"><div class="card-header bg-light"><strong>Usuário:</strong> ${c.usuario} | <strong>Data:</strong> ${new Date(c.data).toLocaleDateString()} | <strong>Hora:</strong> ${c.hora}${currentUser.tipo === 'admin' ? `<button class="btn btn-warning btn-sm float-end" onclick="editarContagemHandler('${c.id}')"><i class="fas fa-edit"></i> Editar</button>` : ''}</div><div class="card-body"><h5>Grupo: ${c.grupoNome}</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Produto</th><th>Quantidade</th></tr></thead><tbody>${Object.entries(c.contagens).map(([prod, qtd]) => `<tr><td>${prod}</td><td>${qtd}</td></tr>`).join('')}</tbody></table></div></div></div>`).join('')}
+        </div></div></div>`;
     }
 
     async function renderComprasTab(grupos) {
-        return `
-            <div class="tab-pane fade" id="compras">
-                <div class="card card-modern"><div class="card-body">
-                    <h4>Registrar Nova Compra</h4>
-                    <div class="row">
-                        ${grupos.map(g => `
-                            <div class="col-md-4 mb-3"><div class="card product-card" onclick="abrirComprasGrupo('${g.id}', '${g.nome}')">
-                                <div class="card-body text-center"><i class="fas fa-shopping-cart fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div>
-                            </div></div>
-                        `).join('')}
-                    </div>
-                </div></div>
-            </div>
-        `;
+        return `<div class="tab-pane fade" id="compras"><div class="card card-modern"><div class="card-body"><h4>Registrar Nova Compra</h4><div class="row">${grupos.map(g => `<div class="col-md-4 mb-3"><div class="card product-card" onclick="abrirComprasGrupo('${g.id}', '${g.nome}')"><div class="card-body text-center"><i class="fas fa-shopping-cart fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div></div></div>`).join('')}</div></div></div></div>`;
     }
 
+    // ========== PÁGINA GESTÃO DE COMPRAS (COM FILTRO POR DATA E PDF) ==========
     async function renderPaginaCompras(compras, grupos) {
         const totalCompras = compras.length;
         const valorTotal = compras.reduce((s, c) => s + (c.valorTotal || 0), 0);
         const totalProdutos = compras.reduce((s, c) => s + (c.quantidade || 0), 0);
+        
+        window.allComprasData = compras;
+        
         return `
             <div class="tab-pane fade" id="paginaCompras">
                 <div class="row mb-4">
@@ -626,19 +670,46 @@
                     <div class="col-md-4"><div class="stats-card"><i class="fas fa-dollar-sign fa-2x"></i><h3>R$ ${valorTotal.toFixed(2)}</h3><p>Valor Total</p></div></div>
                     <div class="col-md-4"><div class="stats-card"><i class="fas fa-boxes fa-2x"></i><h3>${totalProdutos}</h3><p>Unidades Compradas</p></div></div>
                 </div>
-                <div class="card card-modern"><div class="card-body">
-                    <div class="d-flex justify-content-between"><h4><i class="fas fa-list-alt me-2"></i>Histórico de Compras</h4><button class="btn btn-modern" onclick="abrirModalNovaCompra()"><i class="fas fa-plus me-2"></i>Nova Compra</button></div>
-                    <div class="filter-bar"><div class="row"><div class="col-md-4"><input type="text" class="form-control" id="filterProduto" placeholder="Filtrar produto"></div>
-                    <div class="col-md-4"><input type="text" class="form-control" id="filterDistribuidora" placeholder="Distribuidora"></div>
-                    <div class="col-md-4"><button class="btn btn-primary w-100" onclick="filtrarCompras()"><i class="fas fa-search me-2"></i>Filtrar</button></div></div></div>
-                    <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Qtd</th><th>Valor Unit.</th><th>Total</th><th>Distribuidora</th><th>Usuário</th><th>Ações</th></tr></thead>
-                    <tbody id="comprasTableBody">${compras.map(c => `
-                        <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
-                        <td>${c.quantidade}</td><td>R$ ${c.valor.toFixed(2)}</td><td>R$ ${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td>
-                        <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
-                        <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td></tr>
-                    `).join('')}</tbody></table></div>
-                </div></div>
+                <div class="card card-modern">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between flex-wrap align-items-center mb-3">
+                            <h4><i class="fas fa-list-alt me-2"></i>Histórico de Compras</h4>
+                            <div>
+                                <button class="btn btn-modern me-2" onclick="gerarPDF()"><i class="fas fa-file-pdf me-2"></i>Gerar PDF</button>
+                                <button class="btn btn-modern" onclick="abrirModalNovaCompra()"><i class="fas fa-plus me-2"></i>Nova Compra</button>
+                            </div>
+                        </div>
+                        <div class="filter-bar">
+                            <div class="row g-2">
+                                <div class="col-md-3"><input type="text" class="form-control" id="filterProduto" placeholder="Produto"></div>
+                                <div class="col-md-3"><input type="text" class="form-control" id="filterDistribuidora" placeholder="Distribuidora"></div>
+                                <div class="col-md-2"><input type="date" class="form-control" id="filterDataInicio" placeholder="Data início"></div>
+                                <div class="col-md-2"><input type="date" class="form-control" id="filterDataFim" placeholder="Data fim"></div>
+                                <div class="col-md-2"><button class="btn btn-primary w-100" onclick="filtrarCompras()"><i class="fas fa-search me-2"></i>Filtrar</button></div>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-modern" id="tabelaCompras">
+                                <thead><tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Qtd</th><th>Valor Unit.</th><th>Total</th><th>Distribuidora</th><th>Usuário</th><th>Ações</th></tr></thead>
+                                <tbody id="comprasTableBody">
+                                    ${compras.map(c => `
+                                        <tr>
+                                            <td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td>
+                                            <td>${c.produtoNome}</td>
+                                            <td>${c.grupoNome}</td>
+                                            <td>${c.quantidade}</td>
+                                            <td>R$ ${c.valor.toFixed(2)}</td>
+                                            <td>R$ ${c.valorTotal.toFixed(2)}</td>
+                                            <td>${c.distribuidora}</td>
+                                            <td>${c.usuario}</td>
+                                            <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -648,23 +719,375 @@
         const ultima = contagens[0];
         const penultima = contagens[1];
         const comprasNoPeriodo = compras.filter(c => new Date(c.dataRegistro) > new Date(penultima.data) && new Date(c.dataRegistro) < new Date(ultima.data));
+        return `<div class="tab-pane fade" id="relatorio"><div class="card card-modern"><div class="card-body"><h4>Relatório de Consumo - ${ultima.grupoNome}</h4><div class="table-responsive"><table class="table table-modern"><thead><tr><th>Produto</th><th>Última</th><th>Anterior</th><th>Compras</th><th>Consumo</th></tr></thead><tbody>${Object.entries(ultima.contagens).map(([prod, atual]) => { const anterior = penultima.contagens[prod] || 0; const comprasProd = comprasNoPeriodo.filter(c => c.produtoNome === prod).reduce((s, c) => s + c.quantidade, 0); const consumo = (anterior + comprasProd) - atual; return `<tr><td>${prod}</td><td>${atual}</td><td>${anterior}</td><td>${comprasProd}</td><td class="${consumo < 0 ? 'text-danger' : 'text-success'}">${consumo}</td></tr>`; }).join('')}</tbody></table></div></div></div></div>`;
+    }
+
+    // ========== PÁGINA CONSUMO DE COLABORADOR ==========
+    async function renderColaboradoresTab() {
+        const colaboradores = await getColaboradores();
+        const grupos = await getGrupos();
+        // Criar um mapa de produtos por grupo para facilitar
+        const produtosMap = {};
+        grupos.forEach(g => {
+            g.produtos.forEach(p => {
+                produtosMap[p] = { grupoId: g.id, grupoNome: g.nome };
+            });
+        });
+        
         return `
-            <div class="tab-pane fade" id="relatorio">
-                <div class="card card-modern"><div class="card-body">
-                    <h4>Relatório de Consumo - ${ultima.grupoNome}</h4>
-                    <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Produto</th><th>Última</th><th>Anterior</th><th>Compras</th><th>Consumo</th></tr></thead>
-                    <tbody>${Object.entries(ultima.contagens).map(([prod, atual]) => {
-                        const anterior = penultima.contagens[prod] || 0;
-                        const comprasProd = comprasNoPeriodo.filter(c => c.produtoNome === prod).reduce((s, c) => s + c.quantidade, 0);
-                        const consumo = (anterior + comprasProd) - atual;
-                        return `<tr><td>${prod}</td><td>${atual}</td><td>${anterior}</td><td>${comprasProd}</td><td class="${consumo < 0 ? 'text-danger' : 'text-success'}">${consumo}</td></tr>`;
-                    }).join('')}</tbody></table></div>
-                </div></div>
+            <div class="tab-pane fade" id="colaboradores">
+                <div class="card card-modern">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h4><i class="fas fa-user-friends me-2"></i>Consumo por Colaborador</h4>
+                            <button class="btn btn-modern" onclick="abrirModalCriarColaborador()">
+                                <i class="fas fa-plus me-2"></i>Novo Colaborador
+                            </button>
+                        </div>
+                        
+                        <div class="row">
+                            ${colaboradores.length === 0 ? '<div class="col-12"><div class="alert alert-info">Nenhum colaborador cadastrado.</div></div>' : 
+                                colaboradores.map(colab => `
+                                    <div class="col-md-6 col-lg-4 mb-4">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                                                <h5 class="mb-0"><i class="fas fa-user me-2"></i>${colab.nome}</h5>
+                                                <div>
+                                                    <button class="btn btn-sm btn-warning me-1" onclick="verDetalhesColaborador('${colab.id}', '${colab.nome}')" title="Ver/Editar itens">
+                                                        <i class="fas fa-eye"></i>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-danger" onclick="excluirColaboradorHandler('${colab.id}')" title="Excluir colaborador">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="card-body">
+                                                <p><small>Criado por: ${colab.criadoPor}</small></p>
+                                                <p><small>Data: ${new Date(colab.dataCriacao).toLocaleDateString()}</small></p>
+                                                <p><strong>Total de itens:</strong> ${colab.itens ? Object.keys(colab.itens).length : 0}</p>
+                                                <button class="btn btn-outline-primary w-100" onclick="verDetalhesColaborador('${colab.id}', '${colab.nome}')">
+                                                    <i class="fas fa-list me-2"></i>Gerenciar Itens
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')
+                            }
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }
-
-    // ========== HANDLERS GLOBAIS (expostos para onclick) ==========
+    
+    // Funções globais para colaboradores
+    window.abrirModalCriarColaborador = () => {
+        const modalHtml = `
+            <div class="modal fade" id="modalNovoColaborador" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Novo Colaborador</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label>Nome do Colaborador</label>
+                                <input type="text" class="form-control" id="nomeColaborador" placeholder="Ex: João Silva">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button class="btn btn-primary" onclick="criarNovoColaborador()">Criar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('modalNovoColaborador'));
+        modal.show();
+        document.getElementById('modalNovoColaborador').addEventListener('hidden.bs.modal', () => document.getElementById('modalNovoColaborador')?.remove());
+    };
+    
+    window.criarNovoColaborador = async () => {
+        const nome = document.getElementById('nomeColaborador').value.trim();
+        if (!nome) return alert('Digite o nome do colaborador');
+        await criarColaborador(nome);
+        bootstrap.Modal.getInstance(document.getElementById('modalNovoColaborador')).hide();
+        renderizarPrincipal();
+        alert('Colaborador criado com sucesso!');
+    };
+    
+    window.excluirColaboradorHandler = async (colabId) => {
+        if (await excluirColaborador(colabId)) {
+            renderizarPrincipal();
+            alert('Colaborador excluído.');
+        }
+    };
+    
+    window.verDetalhesColaborador = async (colabId, colabNome) => {
+        const colaboradores = await getColaboradores();
+        const colab = colaboradores.find(c => c.id === colabId);
+        if (!colab) return;
+        const grupos = await getGrupos();
+        // Preparar lista de produtos para o select
+        const todosProdutos = [];
+        grupos.forEach(g => {
+            g.produtos.forEach(p => {
+                todosProdutos.push({ nome: p, grupoId: g.id, grupoNome: g.nome });
+            });
+        });
+        
+        const itens = colab.itens ? Object.entries(colab.itens).map(([itemId, item]) => ({ id: itemId, ...item })) : [];
+        
+        // Modal para gerenciar itens
+        const modalHtml = `
+            <div class="modal fade" id="modalDetalhesColab" tabindex="-1" style="display: none;" aria-hidden="true">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Consumo de ${colabNome}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <button class="btn btn-primary mb-3" onclick="abrirModalAdicionarItem('${colabId}', '${colabNome}')">
+                                    <i class="fas fa-plus me-2"></i>Adicionar Item
+                                </button>
+                            </div>
+                            <!-- Filtros -->
+                            <div class="filter-bar mb-3">
+                                <div class="row g-2">
+                                    <div class="col-md-4">
+                                        <input type="text" class="form-control" id="filterItemProduto" placeholder="Filtrar por produto">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <input type="date" class="form-control" id="filterItemDataInicio" placeholder="Data início">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <input type="date" class="form-control" id="filterItemDataFim" placeholder="Data fim">
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-md-12">
+                                        <button class="btn btn-primary w-100" onclick="aplicarFiltroItens('${colabId}')"><i class="fas fa-search me-2"></i>Filtrar</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="itensListContainer">
+                                ${renderItensList(itens)}
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('modalDetalhesColab'));
+        modal.show();
+        // Armazenar os dados para uso nos filtros
+        window.currentColabId = colabId;
+        window.currentColabItens = itens;
+        document.getElementById('modalDetalhesColab').addEventListener('hidden.bs.modal', () => document.getElementById('modalDetalhesColab')?.remove());
+    };
+    
+    function renderItensList(itens) {
+        if (itens.length === 0) return '<div class="alert alert-info">Nenhum item registrado.</div>';
+        return `
+            <div class="table-responsive">
+                <table class="table table-modern">
+                    <thead>
+                        <tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Valor</th><th>Registrado por</th><th>Ações</th></tr>
+                    </thead>
+                    <tbody>
+                        ${itens.map(item => `
+                            <tr>
+                                <td>${new Date(item.data).toLocaleDateString('pt-BR')}</td>
+                                <td>${item.produto}</td>
+                                <td>${item.grupoNome}</td>
+                                <td>${item.valor}</td>
+                                <td>${item.usuario}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-warning" onclick="editarItemColaborador('${window.currentColabId}', '${item.id}')"><i class="fas fa-edit"></i></button>
+                                    <button class="btn btn-sm btn-danger" onclick="removerItemColaborador('${window.currentColabId}', '${item.id}')"><i class="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+    
+    window.aplicarFiltroItens = (colabId) => {
+        const produtoFiltro = document.getElementById('filterItemProduto').value.toLowerCase();
+        const dataInicio = document.getElementById('filterItemDataInicio').value;
+        const dataFim = document.getElementById('filterItemDataFim').value;
+        let itensFiltrados = window.currentColabItens.filter(item => {
+            if (produtoFiltro && !item.produto.toLowerCase().includes(produtoFiltro)) return false;
+            if (dataInicio) {
+                const itemData = new Date(item.data);
+                const inicio = new Date(dataInicio);
+                inicio.setHours(0,0,0,0);
+                if (itemData < inicio) return false;
+            }
+            if (dataFim) {
+                const itemData = new Date(item.data);
+                const fim = new Date(dataFim);
+                fim.setHours(23,59,59,999);
+                if (itemData > fim) return false;
+            }
+            return true;
+        });
+        const container = document.getElementById('itensListContainer');
+        container.innerHTML = renderItensList(itensFiltrados);
+    };
+    
+    window.abrirModalAdicionarItem = async (colabId, colabNome) => {
+        const grupos = await getGrupos();
+        const produtos = [];
+        grupos.forEach(g => {
+            g.produtos.forEach(p => {
+                produtos.push({ nome: p, grupoId: g.id, grupoNome: g.nome });
+            });
+        });
+        const modalHtml = `
+            <div class="modal fade" id="modalAddItem" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Adicionar Item - ${colabNome}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label>Produto</label>
+                                <select class="form-control" id="itemProdutoSelect">
+                                    <option value="">Selecione um produto</option>
+                                    ${produtos.map(p => `<option value="${p.nome}" data-grupo-id="${p.grupoId}" data-grupo-nome="${p.grupoNome}">${p.nome} (${p.grupoNome})</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label>Valor (quantidade ou preço)</label>
+                                <input type="number" step="0.01" class="form-control" id="itemValor" placeholder="Ex: 2.5">
+                            </div>
+                            <div class="mb-3">
+                                <label>Data</label>
+                                <input type="date" class="form-control" id="itemData" value="${new Date().toISOString().split('T')[0]}">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button class="btn btn-primary" onclick="confirmarAdicionarItem('${colabId}')">Adicionar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('modalAddItem'));
+        modal.show();
+        document.getElementById('modalAddItem').addEventListener('hidden.bs.modal', () => document.getElementById('modalAddItem')?.remove());
+    };
+    
+    window.confirmarAdicionarItem = async (colabId) => {
+        const produtoSelect = document.getElementById('itemProdutoSelect');
+        const produtoNome = produtoSelect.value;
+        if (!produtoNome) return alert('Selecione um produto');
+        const grupoId = produtoSelect.options[produtoSelect.selectedIndex].getAttribute('data-grupo-id');
+        const grupoNome = produtoSelect.options[produtoSelect.selectedIndex].getAttribute('data-grupo-nome');
+        const valor = document.getElementById('itemValor').value;
+        if (!valor) return alert('Digite o valor');
+        const data = document.getElementById('itemData').value;
+        await adicionarItemColaborador(colabId, produtoNome, grupoId, grupoNome, valor, data);
+        bootstrap.Modal.getInstance(document.getElementById('modalAddItem')).hide();
+        // Recarregar detalhes
+        document.getElementById('modalDetalhesColab')?.remove();
+        window.verDetalhesColaborador(colabId, (await getColaboradores()).find(c => c.id === colabId)?.nome);
+    };
+    
+    window.editarItemColaborador = async (colabId, itemId) => {
+        const colaboradores = await getColaboradores();
+        const colab = colaboradores.find(c => c.id === colabId);
+        const item = colab.itens[itemId];
+        if (!item) return;
+        const grupos = await getGrupos();
+        const produtos = [];
+        grupos.forEach(g => {
+            g.produtos.forEach(p => {
+                produtos.push({ nome: p, grupoId: g.id, grupoNome: g.nome });
+            });
+        });
+        const modalHtml = `
+            <div class="modal fade" id="modalEditItem" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Editar Item</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label>Produto</label>
+                                <select class="form-control" id="editItemProdutoSelect">
+                                    ${produtos.map(p => `<option value="${p.nome}" data-grupo-id="${p.grupoId}" data-grupo-nome="${p.grupoNome}" ${p.nome === item.produto ? 'selected' : ''}>${p.nome} (${p.grupoNome})</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label>Valor</label>
+                                <input type="number" step="0.01" class="form-control" id="editItemValor" value="${item.valor}">
+                            </div>
+                            <div class="mb-3">
+                                <label>Data</label>
+                                <input type="date" class="form-control" id="editItemData" value="${item.data}">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button class="btn btn-primary" onclick="confirmarEditarItem('${colabId}', '${itemId}')">Salvar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('modalEditItem'));
+        modal.show();
+        document.getElementById('modalEditItem').addEventListener('hidden.bs.modal', () => document.getElementById('modalEditItem')?.remove());
+    };
+    
+    window.confirmarEditarItem = async (colabId, itemId) => {
+        const produtoSelect = document.getElementById('editItemProdutoSelect');
+        const produtoNome = produtoSelect.value;
+        const grupoId = produtoSelect.options[produtoSelect.selectedIndex].getAttribute('data-grupo-id');
+        const grupoNome = produtoSelect.options[produtoSelect.selectedIndex].getAttribute('data-grupo-nome');
+        const valor = document.getElementById('editItemValor').value;
+        const data = document.getElementById('editItemData').value;
+        if (!produtoNome || !valor) return alert('Preencha todos os campos');
+        await editarItemColaborador(colabId, itemId, {
+            produto: produtoNome,
+            grupoId: grupoId,
+            grupoNome: grupoNome,
+            valor: parseFloat(valor),
+            data: data
+        });
+        bootstrap.Modal.getInstance(document.getElementById('modalEditItem')).hide();
+        document.getElementById('modalDetalhesColab')?.remove();
+        window.verDetalhesColaborador(colabId, (await getColaboradores()).find(c => c.id === colabId)?.nome);
+    };
+    
+    window.removerItemColaborador = async (colabId, itemId) => {
+        if (await removerItemColaborador(colabId, itemId)) {
+            document.getElementById('modalDetalhesColab')?.remove();
+            window.verDetalhesColaborador(colabId, (await getColaboradores()).find(c => c.id === colabId)?.nome);
+        }
+    };
+    
+    // ========== HANDLERS GLOBAIS (já existentes) ==========
     window.mudarAba = (tabId) => {
         currentActiveTab = tabId;
         renderizarPrincipal();
@@ -693,9 +1116,7 @@
         }
     };
     window.adicionarProdutoAoGrupoUI = (grupoId, grupoNome) => {
-        const modalHtml = `<div class="modal fade" id="modalAdd"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Adicionar Produto - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body"><input type="text" class="form-control" id="novoProdutoNome" placeholder="Nome do produto"></div>
-        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" onclick="confirmarAdicionarProduto('${grupoId}')">Adicionar</button></div></div></div></div>`;
+        const modalHtml = `<div class="modal fade" id="modalAdd"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Adicionar Produto - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="text" class="form-control" id="novoProdutoNome" placeholder="Nome do produto"></div><div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" onclick="confirmarAdicionarProduto('${grupoId}')">Adicionar</button></div></div></div></div>`;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         const modal = new bootstrap.Modal(document.getElementById('modalAdd'));
         modal.show();
@@ -709,11 +1130,9 @@
         renderizarPrincipal();
         alert('Produto adicionado!');
     };
-    window.editarGrupo = (grupoId) => { /* similar ao anterior, vou omitir por brevidade, mas pode ser implementado igual */ alert('Função editar grupo disponível na versão completa'); };
+    window.editarGrupo = (grupoId) => { alert('Função editar grupo disponível na versão completa'); };
     window.abrirModalGrupo = () => {
-        const modalHtml = `<div class="modal fade" id="modalGrupo"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Novo Grupo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body"><input type="text" class="form-control" id="nomeGrupo" placeholder="Nome do grupo"><div id="produtosContainer"><div class="mb-3"><label>Produto 1</label><input type="text" class="form-control produto-input"></div></div>
-        <button class="btn btn-secondary btn-sm" onclick="adicionarProdutoInput()">+ Adicionar Produto</button></div><div class="modal-footer"><button class="btn btn-primary" onclick="salvarGrupoFirebase()">Salvar</button></div></div></div></div>`;
+        const modalHtml = `<div class="modal fade" id="modalGrupo"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Novo Grupo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="text" class="form-control" id="nomeGrupo" placeholder="Nome do grupo"><div id="produtosContainer"><div class="mb-3"><label>Produto 1</label><input type="text" class="form-control produto-input"></div></div><button class="btn btn-secondary btn-sm" onclick="adicionarProdutoInput()">+ Adicionar Produto</button></div><div class="modal-footer"><button class="btn btn-primary" onclick="salvarGrupoFirebase()">Salvar</button></div></div></div></div>`;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         const modal = new bootstrap.Modal(document.getElementById('modalGrupo'));
         modal.show();
@@ -741,9 +1160,7 @@
         (async () => {
             const grupos = await getGrupos();
             const grupo = grupos.find(g => g.id === grupoId);
-            const modalHtml = `<div class="modal fade" id="modalContagem"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Contagem - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">${grupo.produtos.map((p, i) => `<div class="mb-3"><label>${p}</label><input type="number" step="0.01" class="form-control" id="prod_${i}"></div>`).join('')}</div>
-            <div class="modal-footer"><button class="btn btn-primary" onclick="salvarContagemHandler('${grupoId}', '${grupoNome}', ${grupo.produtos.length})">Salvar</button></div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalContagem"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Contagem - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">${grupo.produtos.map((p, i) => `<div class="mb-3"><label>${p}</label><input type="number" step="0.01" class="form-control" id="prod_${i}"></div>`).join('')}</div><div class="modal-footer"><button class="btn btn-primary" onclick="salvarContagemHandler('${grupoId}', '${grupoNome}', ${grupo.produtos.length})">Salvar</button></div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalContagem'));
             modal.show();
@@ -768,9 +1185,7 @@
         (async () => {
             const contagens = await getContagens();
             const contagem = contagens.find(c => c.id === contagemId);
-            const modalHtml = `<div class="modal fade" id="modalEditCont"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Contagem</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">${Object.entries(contagem.contagens).map(([prod, qtd], i) => `<div class="mb-3"><label>${prod}</label><input type="number" step="0.01" class="form-control" id="edit_${i}" value="${qtd}"></div>`).join('')}</div>
-            <div class="modal-footer"><button class="btn btn-secondary" onclick="continuarEditando()">Continuar Editando</button><button class="btn btn-primary" onclick="finalizarEdicaoHandler('${contagemId}', ${Object.keys(contagem.contagens).length})">Finalizar</button></div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalEditCont"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Contagem</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">${Object.entries(contagem.contagens).map(([prod, qtd], i) => `<div class="mb-3"><label>${prod}</label><input type="number" step="0.01" class="form-control" id="edit_${i}" value="${qtd}"></div>`).join('')}</div><div class="modal-footer"><button class="btn btn-secondary" onclick="continuarEditando()">Continuar Editando</button><button class="btn btn-primary" onclick="finalizarEdicaoHandler('${contagemId}', ${Object.keys(contagem.contagens).length})">Finalizar</button></div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalEditCont'));
             modal.show();
@@ -796,8 +1211,7 @@
         (async () => {
             const grupos = await getGrupos();
             const grupo = grupos.find(g => g.id === grupoId);
-            const modalHtml = `<div class="modal fade" id="modalComprasGrupo"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">${grupo.produtos.map(p => `<div class="card mb-2"><div class="card-body"><h6>${p}</h6><button class="btn btn-primary btn-sm" onclick="abrirFormCompra('${grupoId}', '${grupoNome}', '${p}')">Registrar Compra</button></div></div>`).join('')}</div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalComprasGrupo"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">${grupo.produtos.map(p => `<div class="card mb-2"><div class="card-body"><h6>${p}</h6><button class="btn btn-primary btn-sm" onclick="abrirFormCompra('${grupoId}', '${grupoNome}', '${p}')">Registrar Compra</button></div></div>`).join('')}</div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalComprasGrupo'));
             modal.show();
@@ -805,14 +1219,7 @@
         })();
     };
     window.abrirFormCompra = (grupoId, grupoNome, produtoNome) => {
-        const modalHtml = `<div class="modal fade" id="modalFormCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${produtoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body"><div class="mb-3"><label>Valor Unitário (R$)</label><input type="number" step="0.01" class="form-control" id="valor"></div>
-        <div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidora"></div>
-        <div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidade"></div>
-        <div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompra" value="${new Date().toISOString().split('T')[0]}"></div>
-        <div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscal"></div>
-        <div class="mb-3"><label>Observação</label><textarea class="form-control" id="observacao" rows="2"></textarea></div></div>
-        <div class="modal-footer"><button class="btn btn-secondary" onclick="continuarRegistro()">Continuar</button><button class="btn btn-primary" onclick="salvarCompraHandler('${grupoId}', '${grupoNome}', '${produtoNome}')">Salvar</button></div></div></div></div>`;
+        const modalHtml = `<div class="modal fade" id="modalFormCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${produtoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="mb-3"><label>Valor Unitário (R$)</label><input type="number" step="0.01" class="form-control" id="valor"></div><div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidora"></div><div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidade"></div><div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompra" value="${new Date().toISOString().split('T')[0]}"></div><div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscal"></div><div class="mb-3"><label>Observação</label><textarea class="form-control" id="observacao" rows="2"></textarea></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="continuarRegistro()">Continuar</button><button class="btn btn-primary" onclick="salvarCompraHandler('${grupoId}', '${grupoNome}', '${produtoNome}')">Salvar</button></div></div></div></div>`;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         const modal = new bootstrap.Modal(document.getElementById('modalFormCompra'));
         modal.show();
@@ -837,16 +1244,7 @@
     window.abrirModalNovaCompra = () => {
         (async () => {
             const grupos = await getGrupos();
-            const modalHtml = `<div class="modal fade" id="modalNovaCompra"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Nova Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body"><div class="row"><div class="col-md-6"><label>Grupo</label><select class="form-control" id="grupoCompra"><option value="">Selecione</option>${grupos.map(g => `<option value="${g.id}" data-nome="${g.nome}">${g.nome}</option>`).join('')}</select></div>
-            <div class="col-md-6"><label>Produto</label><select class="form-control" id="produtoCompra" disabled></select></div>
-            <div class="col-md-6"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="valorCompra"></div>
-            <div class="col-md-6"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidadeCompra"></div>
-            <div class="col-md-6"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidoraCompra"></div>
-            <div class="col-md-6"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompraNova" value="${new Date().toISOString().split('T')[0]}"></div>
-            <div class="col-md-6"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscalCompra"></div>
-            <div class="col-md-12"><label>Observação</label><textarea class="form-control" id="observacaoCompra" rows="2"></textarea></div></div></div>
-            <div class="modal-footer"><button class="btn btn-primary" onclick="salvarNovaCompra()">Salvar</button></div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalNovaCompra"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Nova Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="row"><div class="col-md-6"><label>Grupo</label><select class="form-control" id="grupoCompra"><option value="">Selecione</option>${grupos.map(g => `<option value="${g.id}" data-nome="${g.nome}">${g.nome}</option>`).join('')}</select></div><div class="col-md-6"><label>Produto</label><select class="form-control" id="produtoCompra" disabled></select></div><div class="col-md-6"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="valorCompra"></div><div class="col-md-6"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidadeCompra"></div><div class="col-md-6"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidoraCompra"></div><div class="col-md-6"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompraNova" value="${new Date().toISOString().split('T')[0]}"></div><div class="col-md-6"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscalCompra"></div><div class="col-md-12"><label>Observação</label><textarea class="form-control" id="observacaoCompra" rows="2"></textarea></div></div></div><div class="modal-footer"><button class="btn btn-primary" onclick="salvarNovaCompra()">Salvar</button></div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalNovaCompra'));
             modal.show();
@@ -888,14 +1286,7 @@
         (async () => {
             const compras = await getCompras();
             const compra = compras.find(c => c.id === compraId);
-            const modalHtml = `<div class="modal fade" id="modalEditCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body"><div class="mb-3"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="editValor" value="${compra.valor}"></div>
-            <div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="editQuantidade" value="${compra.quantidade}"></div>
-            <div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="editDistribuidora" value="${compra.distribuidora}"></div>
-            <div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="editDataCompra" value="${compra.dataCompra || compra.dataRegistro.split('T')[0]}"></div>
-            <div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="editNotaFiscal" value="${compra.notaFiscal || ''}"></div>
-            <div class="mb-3"><label>Observação</label><textarea class="form-control" id="editObservacao" rows="2">${compra.observacao || ''}</textarea></div></div>
-            <div class="modal-footer"><button class="btn btn-primary" onclick="confirmarEditarCompra('${compraId}')">Salvar</button></div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalEditCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="mb-3"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="editValor" value="${compra.valor}"></div><div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="editQuantidade" value="${compra.quantidade}"></div><div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="editDistribuidora" value="${compra.distribuidora}"></div><div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="editDataCompra" value="${compra.dataCompra || compra.dataRegistro.split('T')[0]}"></div><div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="editNotaFiscal" value="${compra.notaFiscal || ''}"></div><div class="mb-3"><label>Observação</label><textarea class="form-control" id="editObservacao" rows="2">${compra.observacao || ''}</textarea></div></div><div class="modal-footer"><button class="btn btn-primary" onclick="confirmarEditarCompra('${compraId}')">Salvar</button></div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalEditCompra'));
             modal.show();
@@ -918,22 +1309,63 @@
         }
     };
     window.filtrarCompras = async () => {
-        const compras = await getCompras();
+        const compras = window.allComprasData || [];
         const filtroProduto = document.getElementById('filterProduto').value.toLowerCase();
         const filtroDist = document.getElementById('filterDistribuidora').value.toLowerCase();
+        const dataInicio = document.getElementById('filterDataInicio').value;
+        const dataFim = document.getElementById('filterDataFim').value;
         let filtradas = compras;
         if (filtroProduto) filtradas = filtradas.filter(c => c.produtoNome.toLowerCase().includes(filtroProduto));
         if (filtroDist) filtradas = filtradas.filter(c => c.distribuidora.toLowerCase().includes(filtroDist));
+        if (dataInicio) {
+            const inicio = new Date(dataInicio); inicio.setHours(0,0,0,0);
+            filtradas = filtradas.filter(c => new Date(c.dataCompra || c.dataRegistro) >= inicio);
+        }
+        if (dataFim) {
+            const fim = new Date(dataFim); fim.setHours(23,59,59,999);
+            filtradas = filtradas.filter(c => new Date(c.dataCompra || c.dataRegistro) <= fim);
+        }
         const tbody = document.getElementById('comprasTableBody');
         if (filtradas.length === 0) tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhuma compra encontrada</td></tr>';
         else {
             tbody.innerHTML = filtradas.map(c => `
-                <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
-                <td>${c.quantidade}</td><td>R$ ${c.valor.toFixed(2)}</td><td>R$ ${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td>
-                <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
-                <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td></tr>
+                <tr>
+                    <td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td>
+                    <td>${c.produtoNome}</td>
+                    <td>${c.grupoNome}</td>
+                    <td>${c.quantidade}</td>
+                    <td>R$ ${c.valor.toFixed(2)}</td>
+                    <td>R$ ${c.valorTotal.toFixed(2)}</td>
+                    <td>${c.distribuidora}</td>
+                    <td>${c.usuario}</td>
+                    <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td>
+                </tr>
             `).join('');
         }
+        window.currentFilteredCompras = filtradas;
+    };
+    window.gerarPDF = async () => {
+        const comprasExibidas = window.currentFilteredCompras || window.allComprasData || [];
+        if (comprasExibidas.length === 0) return alert('Não há compras para gerar o relatório.');
+        const element = document.createElement('div');
+        element.className = 'pdf-report';
+        element.innerHTML = `
+            <div class="header">
+                <h2>Relatório de Compras</h2>
+                <p>Data de geração: ${new Date().toLocaleString('pt-BR')}</p>
+                <p>Usuário: ${currentUser.nome} (${currentUser.email})</p>
+            </div>
+            <table>
+                <thead><tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Quantidade</th><th>Valor Unit.</th><th>Valor Total</th><th>Distribuidora</th><th>Usuário</th></tr></thead>
+                <tbody>
+                    ${comprasExibidas.map(c => `<tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td><td>${c.quantidade}</td><td>${c.valor.toFixed(2)}</td><td>${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td></tr>`).join('')}
+                    <tr class="total-row"><td colspan="3"><strong>Totais</strong></td><td><strong>${comprasExibidas.reduce((s,c)=>s+c.quantidade,0)}</strong></td><td></td><td><strong>R$ ${comprasExibidas.reduce((s,c)=>s+c.valorTotal,0).toFixed(2)}</strong></td><td colspan="2"></td></tr>
+                </tbody>
+            </table>
+            <div class="footer"><p>Sistema de Controle de Estoque - Relatório gerado em ${new Date().toLocaleString('pt-BR')}</p></div>
+        `;
+        const opt = { margin: [0.5,0.5,0.5,0.5], filename: `relatorio_compras_${new Date().toISOString().slice(0,19)}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' } };
+        html2pdf().set(opt).from(element).save();
     };
 
     // Inicialização
