@@ -6,8 +6,7 @@
     <title>Sistema de Controle de Estoque - Firebase</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Biblioteca para gerar PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+     
     <style>
         /* ========== ESTILOS (mesmos do projeto anterior) ========== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -64,45 +63,6 @@
         .stats-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; padding: 20px; text-align: center; }
         .filter-bar { background: #f8f9fa; padding: 20px; border-radius: 15px; margin-bottom: 20px; }
         .btn-action { margin: 0 5px; border-radius: 10px; }
-        
-        /* Estilos específicos para o PDF */
-        .pdf-report {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            padding: 20px;
-        }
-        .pdf-report h2 {
-            color: #667eea;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
-        }
-        .pdf-report .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .pdf-report .footer {
-            text-align: center;
-            margin-top: 30px;
-            font-size: 10px;
-            color: #666;
-        }
-        .pdf-report table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        .pdf-report th, .pdf-report td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        .pdf-report th {
-            background-color: #667eea;
-            color: white;
-        }
-        .pdf-report .total-row {
-            font-weight: bold;
-            background-color: #f2f2f2;
-        }
     </style>
 </head>
 <body>
@@ -112,8 +72,9 @@
 <script type="module">
     // ========== IMPORTAÇÕES FIREBASE ==========
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-    import { getDatabase, ref, set, get, push, update, remove } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
+    import { getDatabase, ref, set, get, push, update, remove, onValue } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
 
+    // Configuração fornecida
     const firebaseConfig = {
         apiKey: "AIzaSyDqpAqLX-zpJtnL3PjEGZ7eKyEjzElaQ4s",
         authDomain: "stockcontrolprov1.firebaseapp.com",
@@ -278,6 +239,7 @@
     async function excluirGrupoCompleto(grupoId) {
         if (confirm("Tem certeza? Todas as contagens e compras relacionadas serão perdidas!")) {
             await remove(ref(database, `grupos/${grupoId}`));
+            // Remover contagens relacionadas
             const contagensRef = ref(database, 'contagens');
             const contagensSnap = await get(contagensRef);
             if (contagensSnap.exists()) {
@@ -288,6 +250,7 @@
                     }
                 }
             }
+            // Remover compras relacionadas
             const comprasRef = ref(database, 'compras');
             const comprasSnap = await get(comprasRef);
             if (comprasSnap.exists()) {
@@ -386,7 +349,7 @@
         return false;
     }
 
-    // ========== FUNÇÕES DE RENDERIZAÇÃO PRINCIPAL ==========
+    // ========== FUNÇÕES AUXILIARES DE UI ==========
     function showPage(page) {
         const app = document.getElementById('app');
         if (page === 'login') {
@@ -522,6 +485,7 @@
                 </div>
             </div>
         `;
+        // Inicializa tabs
         document.querySelectorAll('#myTab button').forEach(btn => new bootstrap.Tab(btn));
         if (currentActiveTab) {
             const activePane = document.getElementById(currentActiveTab);
@@ -532,57 +496,129 @@
         }
     }
 
-    // Funções de renderização das abas (versões resumidas para manter o foco)
+    // Funções de renderização das abas (adaptadas para async)
     async function renderAdminTab() {
         const solicitacoes = await getSolicitacoesPendentes();
         const usuarios = await getTodosUsuarios();
-        return `<div class="tab-pane fade" id="admin"><div class="card card-modern"><div class="card-body">
-            <h4>Solicitações Pendentes</h4>
-            ${solicitacoes.length === 0 ? '<div class="alert alert-info">Nenhuma solicitação pendente</div>' : `
-                <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Nome</th><th>Email</th><th>Ações</th></tr></thead>
-                <tbody>${solicitacoes.map(s => `<tr><td>${s.nome}</td><td>${s.email}</td><td><button class="btn btn-success btn-sm me-2" onclick="aprovarUsuarioHandler('${s.id}', 'padrao')">Aprovar Padrão</button><button class="btn btn-warning btn-sm" onclick="aprovarUsuarioHandler('${s.id}', 'admin')">Aprovar Admin</button></td></tr>`).join('')}</tbody></table></div>
-            `}
-            <h4 class="mt-4">Usuários do Sistema</h4>
-            <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Ações</th></tr></thead>
-            <tbody>${usuarios.map(u => `<tr><td>${u.nome}</td><td>${u.email}</td><td>${u.tipo === 'admin' ? 'Administrador' : 'Usuário Padrão'}</td>
-            <td><select class="form-select form-select-sm" id="tipo_${u.id}"><option value="padrao" ${u.tipo === 'padrao' ? 'selected' : ''}>Padrão</option><option value="admin" ${u.tipo === 'admin' ? 'selected' : ''}>Admin</option></select>
-            <button class="btn btn-primary btn-sm mt-1" onclick="alterarTipoHandler('${u.id}')">Alterar</button></td></tr>`).join('')}</tbody></table></div>
-        </div></div></div>`;
+        return `
+            <div class="tab-pane fade" id="admin">
+                <div class="card card-modern"><div class="card-body">
+                    <h4>Solicitações Pendentes</h4>
+                    ${solicitacoes.length === 0 ? '<div class="alert alert-info">Nenhuma solicitação pendente</div>' : `
+                        <div class="table-responsive"><table class="table table-modern">
+                            <thead><tr><th>Nome</th><th>Email</th><th>Ações</th></tr></thead>
+                            <tbody>${solicitacoes.map(s => `
+                                <tr><td>${s.nome}</td><td>${s.email}</td>
+                                <td><button class="btn btn-success btn-sm me-2" onclick="aprovarUsuarioHandler('${s.id}', 'padrao')">Aprovar Padrão</button>
+                                    <button class="btn btn-warning btn-sm" onclick="aprovarUsuarioHandler('${s.id}', 'admin')">Aprovar Admin</button></td></tr>
+                            `).join('')}</tbody>
+                        </table></div>
+                    `}
+                    <h4 class="mt-4">Usuários do Sistema</h4>
+                    <div class="table-responsive"><table class="table table-modern">
+                        <thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Ações</th></tr></thead>
+                        <tbody>${usuarios.map(u => `
+                            <tr><td>${u.nome}</td><td>${u.email}</td>
+                            <td>${u.tipo === 'admin' ? 'Administrador' : 'Usuário Padrão'}</td>
+                            <td><select class="form-select form-select-sm" id="tipo_${u.id}">
+                                    <option value="padrao" ${u.tipo === 'padrao' ? 'selected' : ''}>Padrão</option>
+                                    <option value="admin" ${u.tipo === 'admin' ? 'selected' : ''}>Admin</option>
+                                </select>
+                                <button class="btn btn-primary btn-sm mt-1" onclick="alterarTipoHandler('${u.id}')">Alterar</button></td></tr>
+                        `).join('')}</tbody>
+                    </table></div>
+                </div></div>
+            </div>
+        `;
     }
 
     async function renderGruposTab(grupos) {
-        return `<div class="tab-pane fade" id="grupos"><div class="card card-modern"><div class="card-body">
-            <button class="btn btn-modern mb-3" onclick="abrirModalGrupo()"><i class="fas fa-plus me-2"></i>Novo Grupo</button>
-            <div class="row">${grupos.map(g => `<div class="col-md-6 col-lg-4 mb-4"><div class="card group-card h-100"><div class="card-header bg-white d-flex justify-content-between"><h5><i class="fas fa-folder-open me-2"></i>${g.nome}</h5><div><button class="btn btn-sm btn-edit-group" onclick="editarGrupo('${g.id}')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="excluirGrupoHandler('${g.id}')"><i class="fas fa-trash"></i></button></div></div><div class="card-body"><small>Criado por: ${g.criadoPor}</small><br><small>${g.produtos.length} produtos</small><div class="product-list mt-2">${g.produtos.map((p, idx) => `<div class="product-item"><span>${p}</span><button class="btn btn-sm btn-outline-danger" onclick="removerProdutoHandler('${g.id}', ${idx})"><i class="fas fa-times"></i></button></div>`).join('')}</div><button class="btn btn-sm btn-outline-primary w-100 mt-3" onclick="adicionarProdutoAoGrupoUI('${g.id}', '${g.nome}')"><i class="fas fa-plus me-2"></i>Adicionar Produto</button></div></div></div>`).join('')}</div>
-        </div></div></div>`;
+        return `
+            <div class="tab-pane fade" id="grupos">
+                <div class="card card-modern"><div class="card-body">
+                    <button class="btn btn-modern mb-3" onclick="abrirModalGrupo()"><i class="fas fa-plus me-2"></i>Novo Grupo</button>
+                    <div class="row">
+                        ${grupos.map(g => `
+                            <div class="col-md-6 col-lg-4 mb-4">
+                                <div class="card group-card h-100">
+                                    <div class="card-header bg-white d-flex justify-content-between">
+                                        <h5><i class="fas fa-folder-open me-2"></i>${g.nome}</h5>
+                                        <div><button class="btn btn-sm btn-edit-group" onclick="editarGrupo('${g.id}')"><i class="fas fa-edit"></i></button>
+                                        <button class="btn btn-sm btn-danger" onclick="excluirGrupoHandler('${g.id}')"><i class="fas fa-trash"></i></button></div>
+                                    </div>
+                                    <div class="card-body">
+                                        <small>Criado por: ${g.criadoPor}</small><br><small>${g.produtos.length} produtos</small>
+                                        <div class="product-list mt-2">
+                                            ${g.produtos.map((p, idx) => `<div class="product-item"><span>${p}</span><button class="btn btn-sm btn-outline-danger" onclick="removerProdutoHandler('${g.id}', ${idx})"><i class="fas fa-times"></i></button></div>`).join('')}
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-primary w-100 mt-3" onclick="adicionarProdutoAoGrupoUI('${g.id}', '${g.nome}')"><i class="fas fa-plus me-2"></i>Adicionar Produto</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div></div>
+            </div>
+        `;
     }
 
     async function renderContagemTab(grupos) {
-        return `<div class="tab-pane fade ${currentUser.tipo !== 'admin' ? 'show active' : ''}" id="contagem"><div class="card card-modern"><div class="card-body">
-            <h4>Selecione um grupo para contagem</h4><div class="row">${grupos.map(g => `<div class="col-md-4 mb-3"><div class="card product-card" onclick="iniciarContagem('${g.id}', '${g.nome}')"><div class="card-body text-center"><i class="fas fa-box fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div></div></div>`).join('')}</div>
-        </div></div></div>`;
+        return `
+            <div class="tab-pane fade ${currentUser.tipo !== 'admin' ? 'show active' : ''}" id="contagem">
+                <div class="card card-modern"><div class="card-body">
+                    <h4>Selecione um grupo para contagem</h4>
+                    <div class="row">
+                        ${grupos.map(g => `
+                            <div class="col-md-4 mb-3"><div class="card product-card" onclick="iniciarContagem('${g.id}', '${g.nome}')">
+                                <div class="card-body text-center"><i class="fas fa-box fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div>
+                            </div></div>
+                        `).join('')}
+                    </div>
+                </div></div>
+            </div>
+        `;
     }
 
     async function renderRegistrosTab(contagens) {
         if (contagens.length === 0) return `<div class="tab-pane fade" id="registros"><div class="card card-modern"><div class="card-body text-center"><p>Nenhuma contagem ainda</p></div></div></div>`;
-        return `<div class="tab-pane fade" id="registros"><div class="card card-modern"><div class="card-body">
-            ${contagens.map(c => `<div class="card mb-3"><div class="card-header bg-light"><strong>Usuário:</strong> ${c.usuario} | <strong>Data:</strong> ${new Date(c.data).toLocaleDateString()} | <strong>Hora:</strong> ${c.hora}${currentUser.tipo === 'admin' ? `<button class="btn btn-warning btn-sm float-end" onclick="editarContagemHandler('${c.id}')"><i class="fas fa-edit"></i> Editar</button>` : ''}</div><div class="card-body"><h5>Grupo: ${c.grupoNome}</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Produto</th><th>Quantidade</th></tr></thead><tbody>${Object.entries(c.contagens).map(([prod, qtd]) => `<tr><td>${prod}</td><td>${qtd}</td></tr>`).join('')}</tbody></table></div></div></div>`).join('')}
-        </div></div></div>`;
+        return `
+            <div class="tab-pane fade" id="registros">
+                <div class="card card-modern"><div class="card-body">
+                    ${contagens.map(c => `
+                        <div class="card mb-3">
+                            <div class="card-header bg-light"><strong>Usuário:</strong> ${c.usuario} | <strong>Data:</strong> ${new Date(c.data).toLocaleDateString()} | <strong>Hora:</strong> ${c.hora}
+                            ${currentUser.tipo === 'admin' ? `<button class="btn btn-warning btn-sm float-end" onclick="editarContagemHandler('${c.id}')"><i class="fas fa-edit"></i> Editar</button>` : ''}</div>
+                            <div class="card-body"><h5>Grupo: ${c.grupoNome}</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Produto</th><th>Quantidade</th></tr></thead><tbody>
+                                ${Object.entries(c.contagens).map(([prod, qtd]) => `<tr><td>${prod}</td><td>${qtd}</td></tr>`).join('')}
+                            </tbody></table></div></div>
+                        </div>
+                    `).join('')}
+                </div></div>
+            </div>
+        `;
     }
 
     async function renderComprasTab(grupos) {
-        return `<div class="tab-pane fade" id="compras"><div class="card card-modern"><div class="card-body"><h4>Registrar Nova Compra</h4><div class="row">${grupos.map(g => `<div class="col-md-4 mb-3"><div class="card product-card" onclick="abrirComprasGrupo('${g.id}', '${g.nome}')"><div class="card-body text-center"><i class="fas fa-shopping-cart fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div></div></div>`).join('')}</div></div></div></div>`;
+        return `
+            <div class="tab-pane fade" id="compras">
+                <div class="card card-modern"><div class="card-body">
+                    <h4>Registrar Nova Compra</h4>
+                    <div class="row">
+                        ${grupos.map(g => `
+                            <div class="col-md-4 mb-3"><div class="card product-card" onclick="abrirComprasGrupo('${g.id}', '${g.nome}')">
+                                <div class="card-body text-center"><i class="fas fa-shopping-cart fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div>
+                            </div></div>
+                        `).join('')}
+                    </div>
+                </div></div>
+            </div>
+        `;
     }
 
-    // ========== PÁGINA GESTÃO DE COMPRAS (COM FILTRO POR DATA E PDF) ==========
     async function renderPaginaCompras(compras, grupos) {
         const totalCompras = compras.length;
         const valorTotal = compras.reduce((s, c) => s + (c.valorTotal || 0), 0);
         const totalProdutos = compras.reduce((s, c) => s + (c.quantidade || 0), 0);
-        
-        // Armazena as compras atuais para uso nos filtros
-        window.allComprasData = compras;
-        
         return `
             <div class="tab-pane fade" id="paginaCompras">
                 <div class="row mb-4">
@@ -590,75 +626,106 @@
                     <div class="col-md-4"><div class="stats-card"><i class="fas fa-dollar-sign fa-2x"></i><h3>R$ ${valorTotal.toFixed(2)}</h3><p>Valor Total</p></div></div>
                     <div class="col-md-4"><div class="stats-card"><i class="fas fa-boxes fa-2x"></i><h3>${totalProdutos}</h3><p>Unidades Compradas</p></div></div>
                 </div>
-                <div class="card card-modern">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between flex-wrap align-items-center mb-3">
-                            <h4><i class="fas fa-list-alt me-2"></i>Histórico de Compras</h4>
-                            <div>
-                                <button class="btn btn-modern me-2" onclick="gerarPDF()"><i class="fas fa-file-pdf me-2"></i>Gerar PDF</button>
-                                <button class="btn btn-modern" onclick="abrirModalNovaCompra()"><i class="fas fa-plus me-2"></i>Nova Compra</button>
-                            </div>
-                        </div>
-                        <!-- Filtros: agora com intervalo de datas -->
-                        <div class="filter-bar">
-                            <div class="row g-2">
-                                <div class="col-md-3">
-                                    <input type="text" class="form-control" id="filterProduto" placeholder="Produto">
-                                </div>
-                                <div class="col-md-3">
-                                    <input type="text" class="form-control" id="filterDistribuidora" placeholder="Distribuidora">
-                                </div>
-                                <div class="col-md-2">
-                                    <input type="date" class="form-control" id="filterDataInicio" placeholder="Data início">
-                                </div>
-                                <div class="col-md-2">
-                                    <input type="date" class="form-control" id="filterDataFim" placeholder="Data fim">
-                                </div>
-                                <div class="col-md-2">
-                                    <button class="btn btn-primary w-100" onclick="filtrarCompras()"><i class="fas fa-search me-2"></i>Filtrar</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table table-modern" id="tabelaCompras">
-                                <thead>
-                                    <tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Qtd</th><th>Valor Unit.</th><th>Total</th><th>Distribuidora</th><th>Usuário</th><th>Ações</th></tr>
-                                </thead>
-                                <tbody id="comprasTableBody">
-                                    ${compras.map(c => `
-                                        <tr>
-                                            <td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td>
-                                            <td>${c.produtoNome}</td>
-                                            <td>${c.grupoNome}</td>
-                                            <td>${c.quantidade}</td>
-                                            <td>R$ ${c.valor.toFixed(2)}</td>
-                                            <td>R$ ${c.valorTotal.toFixed(2)}</td>
-                                            <td>${c.distribuidora}</td>
-                                            <td>${c.usuario}</td>
-                                            <td>
-                                                <button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
-                                                <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button>
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+                <div class="card card-modern"><div class="card-body">
+                    <div class="d-flex justify-content-between"><h4><i class="fas fa-list-alt me-2"></i>Histórico de Compras</h4><button class="btn btn-modern" onclick="abrirModalNovaCompra()"><i class="fas fa-plus me-2"></i>Nova Compra</button></div>
+                    <div class="filter-bar"><div class="row"><div class="col-md-4"><input type="text" class="form-control" id="filterProduto" placeholder="Filtrar produto"></div>
+                    <div class="col-md-4"><input type="text" class="form-control" id="filterDistribuidora" placeholder="Distribuidora"></div>
+                    <div class="col-md-4"><button class="btn btn-primary w-100" onclick="filtrarCompras()"><i class="fas fa-search me-2"></i>Filtrar</button></div></div></div>
+                    <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Qtd</th><th>Valor Unit.</th><th>Total</th><th>Distribuidora</th><th>Usuário</th><th>Ações</th></tr></thead>
+                    <tbody id="comprasTableBody">${compras.map(c => `
+                        <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
+                        <td>${c.quantidade}</td><td>R$ ${c.valor.toFixed(2)}</td><td>R$ ${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td>
+                        <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
+                        <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td></tr>
+                    `).join('')}</tbody></table></div>
+                </div></div>
             </div>
         `;
     }
 
+    // ========== RELATÓRIO REFEITO ==========
     async function renderRelatorioTab(contagens, compras) {
-        if (contagens.length < 2) return `<div class="tab-pane fade" id="relatorio"><div class="card card-modern"><div class="card-body"><p>Duas contagens necessárias.</p></div></div></div>`;
-        const ultima = contagens[0];
-        const penultima = contagens[1];
-        const comprasNoPeriodo = compras.filter(c => new Date(c.dataRegistro) > new Date(penultima.data) && new Date(c.dataRegistro) < new Date(ultima.data));
-        return `<div class="tab-pane fade" id="relatorio"><div class="card card-modern"><div class="card-body"><h4>Relatório de Consumo - ${ultima.grupoNome}</h4><div class="table-responsive"><table class="table table-modern"><thead><tr><th>Produto</th><th>Última</th><th>Anterior</th><th>Compras</th><th>Consumo</th></tr></thead><tbody>${Object.entries(ultima.contagens).map(([prod, atual]) => { const anterior = penultima.contagens[prod] || 0; const comprasProd = comprasNoPeriodo.filter(c => c.produtoNome === prod).reduce((s, c) => s + c.quantidade, 0); const consumo = (anterior + comprasProd) - atual; return `<tr><td>${prod}</td><td>${atual}</td><td>${anterior}</td><td>${comprasProd}</td><td class="${consumo < 0 ? 'text-danger' : 'text-success'}">${consumo}</td></tr>`; }).join('')}</tbody></table></div></div></div></div>`;
+        // Agrupar contagens por grupoId
+        const groupsMap = {};
+        contagens.forEach(c => {
+            if (!groupsMap[c.grupoId]) groupsMap[c.grupoId] = { nome: c.grupoNome, contagens: [] };
+            groupsMap[c.grupoId].contagens.push(c);
+        });
+
+        let htmlContent = '';
+        let hasAnyReport = false;
+
+        for (const [grupoId, grupoData] of Object.entries(groupsMap)) {
+            const counts = grupoData.contagens;
+            if (counts.length < 2) continue; // Precisa de ao menos duas contagens
+
+            // As contagens já estão ordenadas por data decrescente (getContagens retorna assim)
+            const ultima = counts[0];
+            const penultima = counts[1];
+
+            // Filtrar compras entre a data da penúltima e da última contagem
+            const comprasNoPeriodo = compras.filter(c => {
+                const compDate = new Date(c.dataCompra || c.dataRegistro);
+                const penDate = new Date(penultima.data);
+                const ultDate = new Date(ultima.data);
+                return compDate > penDate && compDate < ultDate && c.grupoId === grupoId;
+            });
+
+            // Montar tabela de consumo
+            let linhas = '';
+            for (const [prod, atual] of Object.entries(ultima.contagens)) {
+                const anterior = penultima.contagens[prod] || 0;
+                const comprasProd = comprasNoPeriodo
+                    .filter(c => c.produtoNome === prod)
+                    .reduce((s, c) => s + c.quantidade, 0);
+                const consumo = (anterior + comprasProd) - atual;
+                linhas += `<tr>
+                    <td>${prod}</td>
+                    <td>${atual}</td>
+                    <td>${anterior}</td>
+                    <td>${comprasProd}</td>
+                    <td class="${consumo < 0 ? 'text-danger' : 'text-success'}">${consumo}</td>
+                </tr>`;
+            }
+
+            htmlContent += `
+                <div class="card card-modern mb-4">
+                    <div class="card-body">
+                        <h4><i class="fas fa-chart-line me-2"></i>Relatório de Consumo - ${grupoData.nome}</h4>
+                        <p class="text-muted">
+                            Última contagem em ${new Date(ultima.data).toLocaleDateString()} | 
+                            Penúltima em ${new Date(penultima.data).toLocaleDateString()}
+                        </p>
+                        <div class="table-responsive">
+                            <table class="table table-modern">
+                                <thead>
+                                    <tr><th>Produto</th><th>Última</th><th>Anterior</th><th>Compras</th><th>Consumo</th></tr>
+                                </thead>
+                                <tbody>${linhas}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+            hasAnyReport = true;
+        }
+
+        if (!hasAnyReport) {
+            htmlContent = `
+                <div class="card card-modern">
+                    <div class="card-body text-center py-5">
+                        <i class="fas fa-exclamation-circle fa-3x mb-3 text-muted"></i>
+                        <h5>Nenhum grupo possui duas contagens para gerar relatório</h5>
+                        <p class="text-muted">Realize ao menos duas contagens para cada grupo desejado.</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `<div class="tab-pane fade" id="relatorio">${htmlContent}</div>`;
     }
 
-    // ========== HANDLERS GLOBAIS ==========
+    // ========== HANDLERS GLOBAIS (expostos para onclick) ==========
     window.mudarAba = (tabId) => {
         currentActiveTab = tabId;
         renderizarPrincipal();
@@ -687,7 +754,9 @@
         }
     };
     window.adicionarProdutoAoGrupoUI = (grupoId, grupoNome) => {
-        const modalHtml = `<div class="modal fade" id="modalAdd"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Adicionar Produto - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="text" class="form-control" id="novoProdutoNome" placeholder="Nome do produto"></div><div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" onclick="confirmarAdicionarProduto('${grupoId}')">Adicionar</button></div></div></div></div>`;
+        const modalHtml = `<div class="modal fade" id="modalAdd"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Adicionar Produto - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><input type="text" class="form-control" id="novoProdutoNome" placeholder="Nome do produto"></div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" onclick="confirmarAdicionarProduto('${grupoId}')">Adicionar</button></div></div></div></div>`;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         const modal = new bootstrap.Modal(document.getElementById('modalAdd'));
         modal.show();
@@ -701,9 +770,11 @@
         renderizarPrincipal();
         alert('Produto adicionado!');
     };
-    window.editarGrupo = (grupoId) => { alert('Função editar grupo disponível na versão completa'); };
+    window.editarGrupo = (grupoId) => { /* similar ao anterior, vou omitir por brevidade, mas pode ser implementado igual */ alert('Função editar grupo disponível na versão completa'); };
     window.abrirModalGrupo = () => {
-        const modalHtml = `<div class="modal fade" id="modalGrupo"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Novo Grupo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="text" class="form-control" id="nomeGrupo" placeholder="Nome do grupo"><div id="produtosContainer"><div class="mb-3"><label>Produto 1</label><input type="text" class="form-control produto-input"></div></div><button class="btn btn-secondary btn-sm" onclick="adicionarProdutoInput()">+ Adicionar Produto</button></div><div class="modal-footer"><button class="btn btn-primary" onclick="salvarGrupoFirebase()">Salvar</button></div></div></div></div>`;
+        const modalHtml = `<div class="modal fade" id="modalGrupo"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Novo Grupo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><input type="text" class="form-control" id="nomeGrupo" placeholder="Nome do grupo"><div id="produtosContainer"><div class="mb-3"><label>Produto 1</label><input type="text" class="form-control produto-input"></div></div>
+        <button class="btn btn-secondary btn-sm" onclick="adicionarProdutoInput()">+ Adicionar Produto</button></div><div class="modal-footer"><button class="btn btn-primary" onclick="salvarGrupoFirebase()">Salvar</button></div></div></div></div>`;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         const modal = new bootstrap.Modal(document.getElementById('modalGrupo'));
         modal.show();
@@ -731,7 +802,9 @@
         (async () => {
             const grupos = await getGrupos();
             const grupo = grupos.find(g => g.id === grupoId);
-            const modalHtml = `<div class="modal fade" id="modalContagem"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Contagem - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">${grupo.produtos.map((p, i) => `<div class="mb-3"><label>${p}</label><input type="number" step="0.01" class="form-control" id="prod_${i}"></div>`).join('')}</div><div class="modal-footer"><button class="btn btn-primary" onclick="salvarContagemHandler('${grupoId}', '${grupoNome}', ${grupo.produtos.length})">Salvar</button></div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalContagem"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Contagem - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">${grupo.produtos.map((p, i) => `<div class="mb-3"><label>${p}</label><input type="number" step="0.01" class="form-control" id="prod_${i}"></div>`).join('')}</div>
+            <div class="modal-footer"><button class="btn btn-primary" onclick="salvarContagemHandler('${grupoId}', '${grupoNome}', ${grupo.produtos.length})">Salvar</button></div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalContagem'));
             modal.show();
@@ -756,7 +829,9 @@
         (async () => {
             const contagens = await getContagens();
             const contagem = contagens.find(c => c.id === contagemId);
-            const modalHtml = `<div class="modal fade" id="modalEditCont"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Contagem</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">${Object.entries(contagem.contagens).map(([prod, qtd], i) => `<div class="mb-3"><label>${prod}</label><input type="number" step="0.01" class="form-control" id="edit_${i}" value="${qtd}"></div>`).join('')}</div><div class="modal-footer"><button class="btn btn-secondary" onclick="continuarEditando()">Continuar Editando</button><button class="btn btn-primary" onclick="finalizarEdicaoHandler('${contagemId}', ${Object.keys(contagem.contagens).length})">Finalizar</button></div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalEditCont"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Contagem</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">${Object.entries(contagem.contagens).map(([prod, qtd], i) => `<div class="mb-3"><label>${prod}</label><input type="number" step="0.01" class="form-control" id="edit_${i}" value="${qtd}"></div>`).join('')}</div>
+            <div class="modal-footer"><button class="btn btn-secondary" onclick="continuarEditando()">Continuar Editando</button><button class="btn btn-primary" onclick="finalizarEdicaoHandler('${contagemId}', ${Object.keys(contagem.contagens).length})">Finalizar</button></div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalEditCont'));
             modal.show();
@@ -782,7 +857,8 @@
         (async () => {
             const grupos = await getGrupos();
             const grupo = grupos.find(g => g.id === grupoId);
-            const modalHtml = `<div class="modal fade" id="modalComprasGrupo"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">${grupo.produtos.map(p => `<div class="card mb-2"><div class="card-body"><h6>${p}</h6><button class="btn btn-primary btn-sm" onclick="abrirFormCompra('${grupoId}', '${grupoNome}', '${p}')">Registrar Compra</button></div></div>`).join('')}</div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalComprasGrupo"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">${grupo.produtos.map(p => `<div class="card mb-2"><div class="card-body"><h6>${p}</h6><button class="btn btn-primary btn-sm" onclick="abrirFormCompra('${grupoId}', '${grupoNome}', '${p}')">Registrar Compra</button></div></div>`).join('')}</div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalComprasGrupo'));
             modal.show();
@@ -790,7 +866,14 @@
         })();
     };
     window.abrirFormCompra = (grupoId, grupoNome, produtoNome) => {
-        const modalHtml = `<div class="modal fade" id="modalFormCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${produtoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="mb-3"><label>Valor Unitário (R$)</label><input type="number" step="0.01" class="form-control" id="valor"></div><div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidora"></div><div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidade"></div><div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompra" value="${new Date().toISOString().split('T')[0]}"></div><div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscal"></div><div class="mb-3"><label>Observação</label><textarea class="form-control" id="observacao" rows="2"></textarea></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="continuarRegistro()">Continuar</button><button class="btn btn-primary" onclick="salvarCompraHandler('${grupoId}', '${grupoNome}', '${produtoNome}')">Salvar</button></div></div></div></div>`;
+        const modalHtml = `<div class="modal fade" id="modalFormCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${produtoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><div class="mb-3"><label>Valor Unitário (R$)</label><input type="number" step="0.01" class="form-control" id="valor"></div>
+        <div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidora"></div>
+        <div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidade"></div>
+        <div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompra" value="${new Date().toISOString().split('T')[0]}"></div>
+        <div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscal"></div>
+        <div class="mb-3"><label>Observação</label><textarea class="form-control" id="observacao" rows="2"></textarea></div></div>
+        <div class="modal-footer"><button class="btn btn-secondary" onclick="continuarRegistro()">Continuar</button><button class="btn btn-primary" onclick="salvarCompraHandler('${grupoId}', '${grupoNome}', '${produtoNome}')">Salvar</button></div></div></div></div>`;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         const modal = new bootstrap.Modal(document.getElementById('modalFormCompra'));
         modal.show();
@@ -815,7 +898,16 @@
     window.abrirModalNovaCompra = () => {
         (async () => {
             const grupos = await getGrupos();
-            const modalHtml = `<div class="modal fade" id="modalNovaCompra"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Nova Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="row"><div class="col-md-6"><label>Grupo</label><select class="form-control" id="grupoCompra"><option value="">Selecione</option>${grupos.map(g => `<option value="${g.id}" data-nome="${g.nome}">${g.nome}</option>`).join('')}</select></div><div class="col-md-6"><label>Produto</label><select class="form-control" id="produtoCompra" disabled></select></div><div class="col-md-6"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="valorCompra"></div><div class="col-md-6"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidadeCompra"></div><div class="col-md-6"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidoraCompra"></div><div class="col-md-6"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompraNova" value="${new Date().toISOString().split('T')[0]}"></div><div class="col-md-6"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscalCompra"></div><div class="col-md-12"><label>Observação</label><textarea class="form-control" id="observacaoCompra" rows="2"></textarea></div></div></div><div class="modal-footer"><button class="btn btn-primary" onclick="salvarNovaCompra()">Salvar</button></div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalNovaCompra"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Nova Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><div class="row"><div class="col-md-6"><label>Grupo</label><select class="form-control" id="grupoCompra"><option value="">Selecione</option>${grupos.map(g => `<option value="${g.id}" data-nome="${g.nome}">${g.nome}</option>`).join('')}</select></div>
+            <div class="col-md-6"><label>Produto</label><select class="form-control" id="produtoCompra" disabled></select></div>
+            <div class="col-md-6"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="valorCompra"></div>
+            <div class="col-md-6"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidadeCompra"></div>
+            <div class="col-md-6"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidoraCompra"></div>
+            <div class="col-md-6"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompraNova" value="${new Date().toISOString().split('T')[0]}"></div>
+            <div class="col-md-6"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscalCompra"></div>
+            <div class="col-md-12"><label>Observação</label><textarea class="form-control" id="observacaoCompra" rows="2"></textarea></div></div></div>
+            <div class="modal-footer"><button class="btn btn-primary" onclick="salvarNovaCompra()">Salvar</button></div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalNovaCompra'));
             modal.show();
@@ -857,7 +949,14 @@
         (async () => {
             const compras = await getCompras();
             const compra = compras.find(c => c.id === compraId);
-            const modalHtml = `<div class="modal fade" id="modalEditCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="mb-3"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="editValor" value="${compra.valor}"></div><div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="editQuantidade" value="${compra.quantidade}"></div><div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="editDistribuidora" value="${compra.distribuidora}"></div><div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="editDataCompra" value="${compra.dataCompra || compra.dataRegistro.split('T')[0]}"></div><div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="editNotaFiscal" value="${compra.notaFiscal || ''}"></div><div class="mb-3"><label>Observação</label><textarea class="form-control" id="editObservacao" rows="2">${compra.observacao || ''}</textarea></div></div><div class="modal-footer"><button class="btn btn-primary" onclick="confirmarEditarCompra('${compraId}')">Salvar</button></div></div></div></div>`;
+            const modalHtml = `<div class="modal fade" id="modalEditCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><div class="mb-3"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="editValor" value="${compra.valor}"></div>
+            <div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="editQuantidade" value="${compra.quantidade}"></div>
+            <div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="editDistribuidora" value="${compra.distribuidora}"></div>
+            <div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="editDataCompra" value="${compra.dataCompra || compra.dataRegistro.split('T')[0]}"></div>
+            <div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="editNotaFiscal" value="${compra.notaFiscal || ''}"></div>
+            <div class="mb-3"><label>Observação</label><textarea class="form-control" id="editObservacao" rows="2">${compra.observacao || ''}</textarea></div></div>
+            <div class="modal-footer"><button class="btn btn-primary" onclick="confirmarEditarCompra('${compraId}')">Salvar</button></div></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('modalEditCompra'));
             modal.show();
@@ -879,136 +978,23 @@
             alert('Compra atualizada');
         }
     };
-
-    // ========== FUNÇÃO DE FILTRO COM DATA ==========
     window.filtrarCompras = async () => {
-        const compras = window.allComprasData || [];
+        const compras = await getCompras();
         const filtroProduto = document.getElementById('filterProduto').value.toLowerCase();
         const filtroDist = document.getElementById('filterDistribuidora').value.toLowerCase();
-        const dataInicio = document.getElementById('filterDataInicio').value;
-        const dataFim = document.getElementById('filterDataFim').value;
-        
         let filtradas = compras;
-        
-        if (filtroProduto) {
-            filtradas = filtradas.filter(c => c.produtoNome.toLowerCase().includes(filtroProduto));
-        }
-        if (filtroDist) {
-            filtradas = filtradas.filter(c => c.distribuidora.toLowerCase().includes(filtroDist));
-        }
-        if (dataInicio) {
-            const inicio = new Date(dataInicio);
-            inicio.setHours(0,0,0,0);
-            filtradas = filtradas.filter(c => {
-                const dataCompra = new Date(c.dataCompra || c.dataRegistro);
-                return dataCompra >= inicio;
-            });
-        }
-        if (dataFim) {
-            const fim = new Date(dataFim);
-            fim.setHours(23,59,59,999);
-            filtradas = filtradas.filter(c => {
-                const dataCompra = new Date(c.dataCompra || c.dataRegistro);
-                return dataCompra <= fim;
-            });
-        }
-        
+        if (filtroProduto) filtradas = filtradas.filter(c => c.produtoNome.toLowerCase().includes(filtroProduto));
+        if (filtroDist) filtradas = filtradas.filter(c => c.distribuidora.toLowerCase().includes(filtroDist));
         const tbody = document.getElementById('comprasTableBody');
-        if (filtradas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhuma compra encontrada</td></tr>';
-        } else {
+        if (filtradas.length === 0) tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhuma compra encontrada</td></tr>';
+        else {
             tbody.innerHTML = filtradas.map(c => `
-                <tr>
-                    <td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td>
-                    <td>${c.produtoNome}</td>
-                    <td>${c.grupoNome}</td>
-                    <td>${c.quantidade}</td>
-                    <td>R$ ${c.valor.toFixed(2)}</td>
-                    <td>R$ ${c.valorTotal.toFixed(2)}</td>
-                    <td>${c.distribuidora}</td>
-                    <td>${c.usuario}</td>
-                    <td>
-                        <button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
-                        <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button>
-                    </td>
-                </tr>
+                <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
+                <td>${c.quantidade}</td><td>R$ ${c.valor.toFixed(2)}</td><td>R$ ${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td>
+                <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td></tr>
             `).join('');
         }
-        // Armazenar as compras filtradas para possível uso no PDF (mas o PDF usará os dados da tela)
-        window.currentFilteredCompras = filtradas;
-    };
-    
-    // ========== FUNÇÃO PARA GERAR PDF ==========
-    window.gerarPDF = async () => {
-        // Obter as compras atualmente exibidas na tabela (filtradas ou todas)
-        const comprasExibidas = window.currentFilteredCompras || window.allComprasData || [];
-        if (comprasExibidas.length === 0) {
-            alert('Não há compras para gerar o relatório.');
-            return;
-        }
-        
-        // Criar um elemento temporário para o conteúdo do PDF
-        const element = document.createElement('div');
-        element.className = 'pdf-report';
-        
-        // Cabeçalho
-        element.innerHTML = `
-            <div class="header">
-                <h2>Relatório de Compras</h2>
-                <p>Data de geração: ${new Date().toLocaleString('pt-BR')}</p>
-                <p>Usuário: ${currentUser.nome} (${currentUser.email})</p>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Data</th>
-                        <th>Produto</th>
-                        <th>Grupo</th>
-                        <th>Quantidade</th>
-                        <th>Valor Unitário (R$)</th>
-                        <th>Valor Total (R$)</th>
-                        <th>Distribuidora</th>
-                        <th>Usuário</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${comprasExibidas.map(c => `
-                        <tr>
-                            <td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td>
-                            <td>${c.produtoNome}</td>
-                            <td>${c.grupoNome}</td>
-                            <td>${c.quantidade}</td>
-                            <td>${c.valor.toFixed(2)}</td>
-                            <td>${c.valorTotal.toFixed(2)}</td>
-                            <td>${c.distribuidora}</td>
-                            <td>${c.usuario}</td>
-                        </tr>
-                    `).join('')}
-                    <tr class="total-row">
-                        <td colspan="3"><strong>Totais</strong></td>
-                        <td><strong>${comprasExibidas.reduce((s,c)=>s+c.quantidade,0)}</strong></td>
-                        <td></td>
-                        <td><strong>R$ ${comprasExibidas.reduce((s,c)=>s+c.valorTotal,0).toFixed(2)}</strong></td>
-                        <td colspan="2"></td>
-                    </tr>
-                </tbody>
-            </table>
-            <div class="footer">
-                <p>Sistema de Controle de Estoque - Relatório gerado em ${new Date().toLocaleString('pt-BR')}</p>
-            </div>
-        `;
-        
-        // Configurações do PDF
-        const opt = {
-            margin: [0.5, 0.5, 0.5, 0.5], // margens em polegadas
-            filename: `relatorio_compras_${new Date().toISOString().slice(0,19)}.pdf`,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, letterRendering: true },
-            jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
-        };
-        
-        // Gerar PDF
-        html2pdf().set(opt).from(element).save();
     };
 
     // Inicialização
