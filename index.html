@@ -6,9 +6,11 @@
     <title>Sistema de Controle de Estoque - Firebase</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Bibliotecas para PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
      
     <style>
-        /* ========== ESTILOS (mesmos do projeto anterior) ========== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             background: linear-gradient(135deg, #000000 0%, #5d3c88 100%);
@@ -74,7 +76,6 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
     import { getDatabase, ref, set, get, push, update, remove, onValue } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
 
-    // Configuração fornecida
     const firebaseConfig = {
         apiKey: "AIzaSyDqpAqLX-zpJtnL3PjEGZ7eKyEjzElaQ4s",
         authDomain: "stockcontrolprov1.firebaseapp.com",
@@ -88,11 +89,14 @@
     const app = initializeApp(firebaseConfig);
     const database = getDatabase(app);
 
-    // ========== VARIÁVEIS GLOBAIS ==========
     let currentUser = null;
     let currentActiveTab = 'contagem';
 
-    // ========== FUNÇÕES DE INICIALIZAÇÃO ==========
+    // Dados globais para filtros e PDF
+    window._allContagens = [];
+    window._allCompras = [];
+    window._allGrupos = [];
+
     async function initializeAdmin() {
         const usersRef = ref(database, 'users');
         const snapshot = await get(usersRef);
@@ -116,11 +120,9 @@
                 tipo: "admin",
                 status: "aprovado"
             });
-            console.log("Admin padrão criado no Firebase.");
         }
     }
 
-    // ========== FUNÇÕES DE USUÁRIO ==========
     async function fazerLogin(email, senha) {
         const usersRef = ref(database, 'users');
         const snapshot = await get(usersRef);
@@ -147,11 +149,7 @@
             }
         }
         const newUserRef = push(usersRef);
-        await set(newUserRef, {
-            nome, dataNascimento, email, senha,
-            tipo: "padrao",
-            status: "pendente"
-        });
+        await set(newUserRef, { nome, dataNascimento, email, senha, tipo: "padrao", status: "pendente" });
     }
 
     async function getSolicitacoesPendentes() {
@@ -161,22 +159,18 @@
         if (snapshot.exists()) {
             const users = snapshot.val();
             for (let key in users) {
-                if (users[key].status === "pendente") {
-                    pendentes.push({ id: key, ...users[key] });
-                }
+                if (users[key].status === "pendente") pendentes.push({ id: key, ...users[key] });
             }
         }
         return pendentes;
     }
 
     async function aprovarUsuarioNoBanco(userId, tipo) {
-        const userRef = ref(database, `users/${userId}`);
-        await update(userRef, { status: "aprovado", tipo: tipo });
+        await update(ref(database, `users/${userId}`), { status: "aprovado", tipo: tipo });
     }
 
     async function mudarTipoUsuario(userId, novoTipo) {
-        const userRef = ref(database, `users/${userId}`);
-        await update(userRef, { tipo: novoTipo });
+        await update(ref(database, `users/${userId}`), { tipo: novoTipo });
     }
 
     async function getTodosUsuarios() {
@@ -186,24 +180,19 @@
         if (snapshot.exists()) {
             const users = snapshot.val();
             for (let key in users) {
-                if (users[key].status === "aprovado") {
-                    usuarios.push({ id: key, ...users[key] });
-                }
+                if (users[key].status === "aprovado") usuarios.push({ id: key, ...users[key] });
             }
         }
         return usuarios;
     }
 
-    // ========== FUNÇÕES DE GRUPOS ==========
     async function getGrupos() {
         const gruposRef = ref(database, 'grupos');
         const snapshot = await get(gruposRef);
         const grupos = [];
         if (snapshot.exists()) {
             const data = snapshot.val();
-            for (let key in data) {
-                grupos.push({ id: key, ...data[key] });
-            }
+            for (let key in data) grupos.push({ id: key, ...data[key] });
         }
         return grupos;
     }
@@ -211,11 +200,7 @@
     async function criarGrupo(nome, produtos) {
         const gruposRef = ref(database, 'grupos');
         const novoGrupo = push(gruposRef);
-        await set(novoGrupo, {
-            nome, produtos,
-            criadoPor: currentUser.email,
-            dataCriacao: new Date().toISOString()
-        });
+        await set(novoGrupo, { nome, produtos, criadoPor: currentUser.email, dataCriacao: new Date().toISOString() });
     }
 
     async function adicionarProdutoAoGrupo(grupoId, novoProduto) {
@@ -239,26 +224,20 @@
     async function excluirGrupoCompleto(grupoId) {
         if (confirm("Tem certeza? Todas as contagens e compras relacionadas serão perdidas!")) {
             await remove(ref(database, `grupos/${grupoId}`));
-            // Remover contagens relacionadas
             const contagensRef = ref(database, 'contagens');
             const contagensSnap = await get(contagensRef);
             if (contagensSnap.exists()) {
                 const contagens = contagensSnap.val();
                 for (let key in contagens) {
-                    if (contagens[key].grupoId === grupoId) {
-                        await remove(ref(database, `contagens/${key}`));
-                    }
+                    if (contagens[key].grupoId === grupoId) await remove(ref(database, `contagens/${key}`));
                 }
             }
-            // Remover compras relacionadas
             const comprasRef = ref(database, 'compras');
             const comprasSnap = await get(comprasRef);
             if (comprasSnap.exists()) {
                 const compras = comprasSnap.val();
                 for (let key in compras) {
-                    if (compras[key].grupoId === grupoId) {
-                        await remove(ref(database, `compras/${key}`));
-                    }
+                    if (compras[key].grupoId === grupoId) await remove(ref(database, `compras/${key}`));
                 }
             }
             return true;
@@ -266,13 +245,11 @@
         return false;
     }
 
-    // ========== FUNÇÕES DE CONTAGEM ==========
     async function salvarContagemNoBanco(grupoId, grupoNome, contagens) {
         const contagensRef = ref(database, 'contagens');
         const novaContagem = push(contagensRef);
         await set(novaContagem, {
-            grupoId, grupoNome,
-            contagens: contagens,
+            grupoId, grupoNome, contagens,
             usuario: currentUser.email,
             data: new Date().toISOString(),
             hora: new Date().toLocaleTimeString()
@@ -285,19 +262,15 @@
         const lista = [];
         if (snapshot.exists()) {
             const data = snapshot.val();
-            for (let key in data) {
-                lista.push({ id: key, ...data[key] });
-            }
+            for (let key in data) lista.push({ id: key, ...data[key] });
         }
         return lista.sort((a, b) => new Date(b.data) - new Date(a.data));
     }
 
     async function atualizarContagemNoBanco(contagemId, novasContagens) {
-        const contagemRef = ref(database, `contagens/${contagemId}/contagens`);
-        await set(contagemRef, novasContagens);
+        await set(ref(database, `contagens/${contagemId}/contagens`), novasContagens);
     }
 
-    // ========== FUNÇÕES DE COMPRAS ==========
     async function registrarCompraNoBanco(grupoId, grupoNome, produtoNome, valor, distribuidora, quantidade, dataCompra, notaFiscal, observacao) {
         const comprasRef = ref(database, 'compras');
         const novaCompra = push(comprasRef);
@@ -321,9 +294,7 @@
         const lista = [];
         if (snapshot.exists()) {
             const data = snapshot.val();
-            for (let key in data) {
-                lista.push({ id: key, ...data[key] });
-            }
+            for (let key in data) lista.push({ id: key, ...data[key] });
         }
         return lista.sort((a, b) => new Date(b.dataRegistro) - new Date(a.dataRegistro));
     }
@@ -349,7 +320,7 @@
         return false;
     }
 
-    // ========== FUNÇÕES AUXILIARES DE UI ==========
+    // ========== UI ==========
     function showPage(page) {
         const app = document.getElementById('app');
         if (page === 'login') {
@@ -428,6 +399,12 @@
         const grupos = await getGrupos();
         const contagens = await getContagens();
         const compras = await getCompras();
+
+        // Armazenar globalmente
+        window._allGrupos = grupos;
+        window._allContagens = contagens;
+        window._allCompras = compras;
+
         const isAdmin = currentUser.tipo === 'admin';
         const menuItems = [];
         if (isAdmin) menuItems.push({ id: 'admin', icon: 'fa-users', label: 'Administração' });
@@ -480,12 +457,11 @@
                     ${await renderContagemTab(grupos)}
                     ${await renderRegistrosTab(contagens)}
                     ${isAdmin ? await renderComprasTab(grupos) : ''}
-                    ${await renderRelatorioTab(contagens, compras)}
+                    ${await renderRelatorioTab(contagens, compras, grupos)}
                     ${isAdmin ? await renderPaginaCompras(compras, grupos) : ''}
                 </div>
             </div>
         `;
-        // Inicializa tabs
         document.querySelectorAll('#myTab button').forEach(btn => new bootstrap.Tab(btn));
         if (currentActiveTab) {
             const activePane = document.getElementById(currentActiveTab);
@@ -494,9 +470,12 @@
                 activePane.classList.add('show', 'active');
             }
         }
+        // Após renderizar, se estivermos na aba relatório, popular com filtros
+        if (currentActiveTab === 'relatorio') {
+            setTimeout(() => atualizarRelatorioFiltrado(), 100);
+        }
     }
 
-    // Funções de renderização das abas (adaptadas para async)
     async function renderAdminTab() {
         const solicitacoes = await getSolicitacoesPendentes();
         const usuarios = await getTodosUsuarios();
@@ -615,6 +594,7 @@
         `;
     }
 
+    // ========== PÁGINA GESTÃO DE COMPRAS (com filtros novos) ==========
     async function renderPaginaCompras(compras, grupos) {
         const totalCompras = compras.length;
         const valorTotal = compras.reduce((s, c) => s + (c.valorTotal || 0), 0);
@@ -628,9 +608,22 @@
                 </div>
                 <div class="card card-modern"><div class="card-body">
                     <div class="d-flex justify-content-between"><h4><i class="fas fa-list-alt me-2"></i>Histórico de Compras</h4><button class="btn btn-modern" onclick="abrirModalNovaCompra()"><i class="fas fa-plus me-2"></i>Nova Compra</button></div>
-                    <div class="filter-bar"><div class="row"><div class="col-md-4"><input type="text" class="form-control" id="filterProduto" placeholder="Filtrar produto"></div>
-                    <div class="col-md-4"><input type="text" class="form-control" id="filterDistribuidora" placeholder="Distribuidora"></div>
-                    <div class="col-md-4"><button class="btn btn-primary w-100" onclick="filtrarCompras()"><i class="fas fa-search me-2"></i>Filtrar</button></div></div></div>
+                    <div class="filter-bar">
+                        <div class="row g-2">
+                            <div class="col-md-3"><input type="text" class="form-control" id="filterProduto" placeholder="Filtrar produto"></div>
+                            <div class="col-md-3"><input type="text" class="form-control" id="filterDistribuidora" placeholder="Distribuidora"></div>
+                            <div class="col-md-2">
+                                <select class="form-control" id="filterGrupo">
+                                    <option value="">Todos os grupos</option>
+                                    ${grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="col-md-2"><input type="date" class="form-control" id="filterDataInicio" placeholder="Data início"></div>
+                            <div class="col-md-2"><input type="date" class="form-control" id="filterDataFim" placeholder="Data fim"></div>
+                            <div class="col-md-2"><button class="btn btn-primary w-100" onclick="filtrarCompras()"><i class="fas fa-search me-1"></i> Filtrar</button></div>
+                            <div class="col-md-2"><button class="btn btn-danger w-100" onclick="gerarPDFCompras()"><i class="fas fa-file-pdf me-1"></i> Gerar PDF</button></div>
+                        </div>
+                    </div>
                     <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Qtd</th><th>Valor Unit.</th><th>Total</th><th>Distribuidora</th><th>Usuário</th><th>Ações</th></tr></thead>
                     <tbody id="comprasTableBody">${compras.map(c => `
                         <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
@@ -643,11 +636,57 @@
         `;
     }
 
-    // ========== RELATÓRIO REFEITO ==========
-    async function renderRelatorioTab(contagens, compras) {
-        // Agrupar contagens por grupoId
+    // ========== RELATÓRIO (com filtros novos e PDF) ==========
+    async function renderRelatorioTab(contagens, compras, grupos) {
+        return `
+            <div class="tab-pane fade" id="relatorio">
+                <div class="card card-modern mb-3"><div class="card-body">
+                    <h5><i class="fas fa-filter me-2"></i>Filtros do Relatório</h5>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <select class="form-control" id="relGrupo">
+                                <option value="">Todos os grupos</option>
+                                ${grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="date" class="form-control" id="relDataInicio" placeholder="Data início das contagens">
+                        </div>
+                        <div class="col-md-3">
+                            <input type="date" class="form-control" id="relDataFim" placeholder="Data fim das contagens">
+                        </div>
+                        <div class="col-md-3">
+                            <button class="btn btn-primary w-100" onclick="atualizarRelatorioFiltrado()"><i class="fas fa-search me-1"></i> Filtrar</button>
+                        </div>
+                        <div class="col-md-3 mt-2">
+                            <button class="btn btn-danger w-100" onclick="gerarPDFRelatorio()"><i class="fas fa-file-pdf me-1"></i> Gerar PDF</button>
+                        </div>
+                    </div>
+                </div></div>
+                <div id="relatorioContent"></div>
+            </div>
+        `;
+    }
+
+    // Função global para atualizar a área de relatório com base nos filtros
+    window.atualizarRelatorioFiltrado = () => {
+        const contagens = window._allContagens;
+        const compras = window._allCompras;
+        const grupoFiltro = document.getElementById('relGrupo')?.value || '';
+        const dataInicio = document.getElementById('relDataInicio')?.value || '';
+        const dataFim = document.getElementById('relDataFim')?.value || '';
+
+        // Filtrar contagens por grupo e datas
+        let contagensFiltradas = contagens.filter(c => {
+            if (grupoFiltro && c.grupoId !== grupoFiltro) return false;
+            if (dataInicio && new Date(c.data) < new Date(dataInicio)) return false;
+            if (dataFim && new Date(c.data) > new Date(dataFim + 'T23:59:59')) return false;
+            return true;
+        });
+
+        // Agrupar por grupo
         const groupsMap = {};
-        contagens.forEach(c => {
+        contagensFiltradas.forEach(c => {
             if (!groupsMap[c.grupoId]) groupsMap[c.grupoId] = { nome: c.grupoNome, contagens: [] };
             groupsMap[c.grupoId].contagens.push(c);
         });
@@ -656,22 +695,20 @@
         let hasAnyReport = false;
 
         for (const [grupoId, grupoData] of Object.entries(groupsMap)) {
-            const counts = grupoData.contagens;
-            if (counts.length < 2) continue; // Precisa de ao menos duas contagens
+            const counts = grupoData.contagens.sort((a,b) => new Date(b.data) - new Date(a.data));
+            if (counts.length < 2) continue;
 
-            // As contagens já estão ordenadas por data decrescente (getContagens retorna assim)
             const ultima = counts[0];
             const penultima = counts[1];
 
-            // Filtrar compras entre a data da penúltima e da última contagem
             const comprasNoPeriodo = compras.filter(c => {
+                if (grupoFiltro && c.grupoId !== grupoFiltro) return false;
                 const compDate = new Date(c.dataCompra || c.dataRegistro);
                 const penDate = new Date(penultima.data);
                 const ultDate = new Date(ultima.data);
                 return compDate > penDate && compDate < ultDate && c.grupoId === grupoId;
             });
 
-            // Montar tabela de consumo
             let linhas = '';
             for (const [prod, atual] of Object.entries(ultima.contagens)) {
                 const anterior = penultima.contagens[prod] || 0;
@@ -689,7 +726,7 @@
             }
 
             htmlContent += `
-                <div class="card card-modern mb-4">
+                <div class="card card-modern mb-4 relatorio-card">
                     <div class="card-body">
                         <h4><i class="fas fa-chart-line me-2"></i>Relatório de Consumo - ${grupoData.nome}</h4>
                         <p class="text-muted">
@@ -715,17 +752,87 @@
                 <div class="card card-modern">
                     <div class="card-body text-center py-5">
                         <i class="fas fa-exclamation-circle fa-3x mb-3 text-muted"></i>
-                        <h5>Nenhum grupo possui duas contagens para gerar relatório</h5>
-                        <p class="text-muted">Realize ao menos duas contagens para cada grupo desejado.</p>
+                        <h5>Nenhum grupo possui duas contagens no período selecionado</h5>
                     </div>
                 </div>
             `;
         }
+        const container = document.getElementById('relatorioContent');
+        if (container) container.innerHTML = htmlContent;
+    };
 
-        return `<div class="tab-pane fade" id="relatorio">${htmlContent}</div>`;
-    }
+    // ========== FUNÇÕES DE PDF ==========
+    window.gerarPDFCompras = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('landscape');
+        // Obter dados da tabela atual
+        const tbody = document.getElementById('comprasTableBody');
+        if (!tbody) return alert('Tabela não encontrada.');
+        const rows = Array.from(tbody.querySelectorAll('tr'))
+            .filter(tr => tr.children.length > 1) // ignora mensagem "Nenhuma compra"
+            .map(tr => {
+                const cells = tr.querySelectorAll('td');
+                return Array.from(cells).map(td => td.innerText.trim()).slice(0, -1); // remove coluna ações
+            });
 
-    // ========== HANDLERS GLOBAIS (expostos para onclick) ==========
+        if (rows.length === 0) return alert('Nenhum registro para gerar PDF.');
+
+        const headers = ['Data', 'Produto', 'Grupo', 'Qtd', 'Valor Unit.', 'Total', 'Distribuidora', 'Usuário'];
+        const tableData = rows;
+
+        doc.setFontSize(14);
+        doc.text('Relatório de Compras', 14, 15);
+        doc.autoTable({
+            startY: 22,
+            head: [headers],
+            body: tableData,
+            theme: 'grid',
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [102, 126, 234] }
+        });
+        doc.save(`compras_${new Date().toISOString().slice(0,10)}.pdf`);
+    };
+
+    window.gerarPDFRelatorio = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const cards = document.querySelectorAll('#relatorioContent .relatorio-card');
+        if (cards.length === 0) return alert('Nenhum relatório para gerar PDF.');
+
+        let y = 15;
+        cards.forEach((card, index) => {
+            const title = card.querySelector('h4')?.innerText || 'Relatório';
+            const subtitle = card.querySelector('p.text-muted')?.innerText || '';
+            const table = card.querySelector('table');
+            const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.innerText);
+            const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => 
+                Array.from(tr.querySelectorAll('td')).map(td => td.innerText)
+            );
+
+            doc.setFontSize(13);
+            doc.text(title, 14, y);
+            y += 7;
+            doc.setFontSize(9);
+            doc.text(subtitle, 14, y);
+            y += 6;
+            doc.autoTable({
+                startY: y,
+                head: [headers],
+                body: rows,
+                theme: 'striped',
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [102, 126, 234] }
+            });
+            y = doc.lastAutoTable.finalY + 10;
+            if (index < cards.length - 1 && y > 270) {
+                doc.addPage();
+                y = 15;
+            }
+        });
+        doc.save(`relatorio_consumo_${new Date().toISOString().slice(0,10)}.pdf`);
+    };
+
+    // ========== HANDLERS ==========
     window.mudarAba = (tabId) => {
         currentActiveTab = tabId;
         renderizarPrincipal();
@@ -770,7 +877,7 @@
         renderizarPrincipal();
         alert('Produto adicionado!');
     };
-    window.editarGrupo = (grupoId) => { /* similar ao anterior, vou omitir por brevidade, mas pode ser implementado igual */ alert('Função editar grupo disponível na versão completa'); };
+    window.editarGrupo = (grupoId) => { alert('Função editar grupo disponível na versão completa'); };
     window.abrirModalGrupo = () => {
         const modalHtml = `<div class="modal fade" id="modalGrupo"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Novo Grupo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body"><input type="text" class="form-control" id="nomeGrupo" placeholder="Nome do grupo"><div id="produtosContainer"><div class="mb-3"><label>Produto 1</label><input type="text" class="form-control produto-input"></div></div>
@@ -979,15 +1086,25 @@
         }
     };
     window.filtrarCompras = async () => {
-        const compras = await getCompras();
-        const filtroProduto = document.getElementById('filterProduto').value.toLowerCase();
-        const filtroDist = document.getElementById('filterDistribuidora').value.toLowerCase();
+        const compras = window._allCompras;
+        const filtroProduto = document.getElementById('filterProduto')?.value?.toLowerCase() || '';
+        const filtroDist = document.getElementById('filterDistribuidora')?.value?.toLowerCase() || '';
+        const filtroGrupo = document.getElementById('filterGrupo')?.value || '';
+        const dataInicio = document.getElementById('filterDataInicio')?.value || '';
+        const dataFim = document.getElementById('filterDataFim')?.value || '';
+
         let filtradas = compras;
         if (filtroProduto) filtradas = filtradas.filter(c => c.produtoNome.toLowerCase().includes(filtroProduto));
         if (filtroDist) filtradas = filtradas.filter(c => c.distribuidora.toLowerCase().includes(filtroDist));
+        if (filtroGrupo) filtradas = filtradas.filter(c => c.grupoId === filtroGrupo);
+        if (dataInicio) filtradas = filtradas.filter(c => new Date(c.dataCompra || c.dataRegistro) >= new Date(dataInicio));
+        if (dataFim) filtradas = filtradas.filter(c => new Date(c.dataCompra || c.dataRegistro) <= new Date(dataFim + 'T23:59:59'));
+
         const tbody = document.getElementById('comprasTableBody');
-        if (filtradas.length === 0) tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhuma compra encontrada</td></tr>';
-        else {
+        if (!tbody) return;
+        if (filtradas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhuma compra encontrada</td></tr>';
+        } else {
             tbody.innerHTML = filtradas.map(c => `
                 <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
                 <td>${c.quantidade}</td><td>R$ ${c.valor.toFixed(2)}</td><td>R$ ${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td>
