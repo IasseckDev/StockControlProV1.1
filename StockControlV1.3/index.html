@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Sistema de Controle de Estoque - Firebase</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+     
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: linear-gradient(135deg, #000000 0%, #5d3c88 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding-bottom: 50px;
+        }
+        .navbar-modern {
+            background: linear-gradient(135deg, #000000 0%, #5d3c88 100%);
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+        }
+        .card-modern {
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            border: none;
+            transition: transform 0.3s ease;
+            background: white;
+        }
+        .card-modern:hover { transform: translateY(-5px); }
+        .btn-modern {
+            border-radius: 25px;
+            padding: 10px 30px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            transition: all 0.3s ease;
+        }
+        .btn-modern:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102,126,234,0.4); color: white; }
+        .table-modern { background: white; border-radius: 15px; overflow: hidden; }
+        .table-modern thead { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .product-card { cursor: pointer; transition: all 0.3s ease; }
+        .product-card:hover { transform: translateY(-5px); box-shadow: 0 15px 40px rgba(0,0,0,0.15); }
+        .nav-tabs { display: none; }
+        .mobile-menu-container { display: block; margin-bottom: 20px; }
+        .dropdown-menu-custom { width: 100%; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); border: none; margin-top: 10px; }
+        .dropdown-menu-custom .dropdown-item { padding: 12px 20px; border-radius: 10px; }
+        .dropdown-menu-custom .dropdown-item:hover { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-mobile-menu {
+            background: white; border: none; padding: 12px 20px; border-radius: 15px;
+            font-weight: 600; color: #667eea; width: 100%; text-align: left; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        @media (min-width: 768px) {
+            .nav-tabs { display: flex; }
+            .mobile-menu-container { display: none; }
+        }
+        .container-custom { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .group-card { transition: all 0.3s ease; }
+        .product-item { background: #f8f9fa; border-radius: 10px; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .stats-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; padding: 20px; text-align: center; }
+        .filter-bar { background: #f8f9fa; padding: 20px; border-radius: 15px; margin-bottom: 20px; }
+        .btn-action { margin: 0 5px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
+    import { getDatabase, ref, set, get, push, update, remove } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDqpAqLX-zpJtnL3PjEGZ7eKyEjzElaQ4s",
+        authDomain: "stockcontrolprov1.firebaseapp.com",
+        databaseURL: "https://stockcontrolprov1-default-rtdb.firebaseio.com",
+        projectId: "stockcontrolprov1",
+        storageBucket: "stockcontrolprov1.firebasestorage.app",
+        messagingSenderId: "502144885456",
+        appId: "1:502144885456:web:e457fe45ed67300cdef4d5"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+
+    let currentUser = null;
+    let currentActiveTab = 'contagem';
+
+    window._allContagens = [];
+    window._allCompras = [];
+    window._allGrupos = [];
+
+    async function initializeAdmin() {
+        const usersRef = ref(database, 'users');
+        const snapshot = await get(usersRef);
+        let adminExists = false;
+        if (snapshot.exists()) {
+            const users = snapshot.val();
+            for (let key in users) {
+                if (users[key].email === "iasseck.dev@gmail.com") {
+                    adminExists = true;
+                    break;
+                }
+            }
+        }
+        if (!adminExists) {
+            const newUserRef = push(usersRef);
+            await set(newUserRef, {
+                nome: "Administrador",
+                dataNascimento: "1990-01-01",
+                email: "iasseck.dev@gmail.com",
+                senha: "Johnny2606",
+                tipo: "admin",
+                status: "aprovado"
+            });
+        }
+    }
+
+    async function fazerLogin(email, senha) {
+        const usersRef = ref(database, 'users');
+        const snapshot = await get(usersRef);
+        if (snapshot.exists()) {
+            const users = snapshot.val();
+            for (let key in users) {
+                if (users[key].email === email && users[key].senha === senha && users[key].status === "aprovado") {
+                    currentUser = { id: key, ...users[key] };
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    async function solicitarCadastro(nome, dataNascimento, email, senha) {
+        if (senha.length < 6) throw new Error("A senha deve ter no mínimo 6 dígitos");
+        const usersRef = ref(database, 'users');
+        const snapshot = await get(usersRef);
+        if (snapshot.exists()) {
+            const users = snapshot.val();
+            for (let key in users) {
+                if (users[key].email === email) throw new Error("E-mail já cadastrado");
+            }
+        }
+        const newUserRef = push(usersRef);
+        await set(newUserRef, { nome, dataNascimento, email, senha, tipo: "padrao", status: "pendente" });
+    }
+
+    async function getSolicitacoesPendentes() {
+        const usersRef = ref(database, 'users');
+        const snapshot = await get(usersRef);
+        const pendentes = [];
+        if (snapshot.exists()) {
+            const users = snapshot.val();
+            for (let key in users) {
+                if (users[key].status === "pendente") pendentes.push({ id: key, ...users[key] });
+            }
+        }
+        return pendentes;
+    }
+
+    async function aprovarUsuarioNoBanco(userId, tipo) {
+        await update(ref(database, `users/${userId}`), { status: "aprovado", tipo: tipo });
+    }
+
+    async function mudarTipoUsuario(userId, novoTipo) {
+        await update(ref(database, `users/${userId}`), { tipo: novoTipo });
+    }
+
+    async function getTodosUsuarios() {
+        const usersRef = ref(database, 'users');
+        const snapshot = await get(usersRef);
+        const usuarios = [];
+        if (snapshot.exists()) {
+            const users = snapshot.val();
+            for (let key in users) {
+                if (users[key].status === "aprovado") usuarios.push({ id: key, ...users[key] });
+            }
+        }
+        return usuarios;
+    }
+
+    async function getGrupos() {
+        const gruposRef = ref(database, 'grupos');
+        const snapshot = await get(gruposRef);
+        const grupos = [];
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            for (let key in data) grupos.push({ id: key, ...data[key] });
+        }
+        return grupos;
+    }
+
+    async function criarGrupo(nome, produtos) {
+        const gruposRef = ref(database, 'grupos');
+        const novoGrupo = push(gruposRef);
+        await set(novoGrupo, { nome, produtos, criadoPor: currentUser.email, dataCriacao: new Date().toISOString() });
+    }
+
+    async function adicionarProdutoAoGrupo(grupoId, novoProduto) {
+        const grupoRef = ref(database, `grupos/${grupoId}/produtos`);
+        const snapshot = await get(grupoRef);
+        const produtosAtuais = snapshot.exists() ? snapshot.val() : [];
+        produtosAtuais.push(novoProduto);
+        await set(grupoRef, produtosAtuais);
+    }
+
+    async function removerProdutoDoGrupo(grupoId, produtoIndex) {
+        const grupoRef = ref(database, `grupos/${grupoId}/produtos`);
+        const snapshot = await get(grupoRef);
+        if (snapshot.exists()) {
+            let produtos = snapshot.val();
+            produtos.splice(produtoIndex, 1);
+            await set(grupoRef, produtos);
+        }
+    }
+
+    async function excluirGrupoCompleto(grupoId) {
+        if (confirm("Tem certeza? Todas as contagens e compras relacionadas serão perdidas!")) {
+            await remove(ref(database, `grupos/${grupoId}`));
+            const contagensRef = ref(database, 'contagens');
+            const contagensSnap = await get(contagensRef);
+            if (contagensSnap.exists()) {
+                const contagens = contagensSnap.val();
+                for (let key in contagens) {
+                    if (contagens[key].grupoId === grupoId) await remove(ref(database, `contagens/${key}`));
+                }
+            }
+            const comprasRef = ref(database, 'compras');
+            const comprasSnap = await get(comprasRef);
+            if (comprasSnap.exists()) {
+                const compras = comprasSnap.val();
+                for (let key in compras) {
+                    if (compras[key].grupoId === grupoId) await remove(ref(database, `compras/${key}`));
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    async function salvarContagemNoBanco(grupoId, grupoNome, contagens) {
+        const contagensRef = ref(database, 'contagens');
+        const novaContagem = push(contagensRef);
+        await set(novaContagem, {
+            grupoId, grupoNome, contagens,
+            usuario: currentUser.email,
+            data: new Date().toISOString(),
+            hora: new Date().toLocaleTimeString()
+        });
+    }
+
+    async function getContagens() {
+        const contagensRef = ref(database, 'contagens');
+        const snapshot = await get(contagensRef);
+        const lista = [];
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            for (let key in data) lista.push({ id: key, ...data[key] });
+        }
+        return lista.sort((a, b) => new Date(b.data) - new Date(a.data));
+    }
+
+    async function atualizarContagemNoBanco(contagemId, novasContagens) {
+        await set(ref(database, `contagens/${contagemId}/contagens`), novasContagens);
+    }
+
+    async function registrarCompraNoBanco(grupoId, grupoNome, produtoNome, valor, distribuidora, quantidade, dataCompra, notaFiscal, observacao) {
+        const comprasRef = ref(database, 'compras');
+        const novaCompra = push(comprasRef);
+        await set(novaCompra, {
+            grupoId, grupoNome, produtoNome,
+            valor: parseFloat(valor),
+            distribuidora,
+            quantidade: parseFloat(quantidade),
+            usuario: currentUser.email,
+            dataRegistro: new Date().toISOString(),
+            dataCompra: dataCompra || new Date().toISOString().split('T')[0],
+            notaFiscal: notaFiscal || '',
+            observacao: observacao || '',
+            valorTotal: parseFloat(valor) * parseFloat(quantidade)
+        });
+    }
+
+    async function getCompras() {
+        const comprasRef = ref(database, 'compras');
+        const snapshot = await get(comprasRef);
+        const lista = [];
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            for (let key in data) lista.push({ id: key, ...data[key] });
+        }
+        return lista.sort((a, b) => new Date(b.dataRegistro) - new Date(a.dataRegistro));
+    }
+
+    async function excluirCompra(compraId) {
+        if (confirm("Tem certeza que deseja excluir esta compra?")) {
+            await remove(ref(database, `compras/${compraId}`));
+            return true;
+        }
+        return false;
+    }
+
+    async function editarCompra(compraId, novosDados) {
+        const compraRef = ref(database, `compras/${compraId}`);
+        const snapshot = await get(compraRef);
+        if (snapshot.exists()) {
+            const compra = snapshot.val();
+            const atualizada = { ...compra, ...novosDados };
+            atualizada.valorTotal = atualizada.valor * atualizada.quantidade;
+            await set(compraRef, atualizada);
+            return true;
+        }
+        return false;
+    }
+
+    // ========== UI ==========
+    function showPage(page) {
+        const app = document.getElementById('app');
+        if (page === 'login') {
+            app.innerHTML = `
+                <div class="container mt-5 pt-5">
+                    <div class="row justify-content-center">
+                        <div class="col-md-5">
+                            <div class="card card-modern fade-in">
+                                <div class="card-body p-5">
+                                    <div class="text-center mb-4">
+                                        <i class="fas fa-boxes fa-4x mb-3" style="color: #667eea;"></i>
+                                        <h2>Sistema de Estoque</h2>
+                                        <p class="text-muted">Faça login para continuar</p>
+                                    </div>
+                                    <form id="loginForm">
+                                        <div class="mb-3"><label>Email</label><input type="email" class="form-control" id="email" required></div>
+                                        <div class="mb-3"><label>Senha</label><input type="password" class="form-control" id="senha" required></div>
+                                        <button type="submit" class="btn btn-modern w-100">Entrar</button>
+                                    </form>
+                                    <hr><div class="text-center"><button class="btn btn-link" onclick="showPage('cadastro')">Não tem conta? Solicitar cadastro</button></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('loginForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('email').value;
+                const senha = document.getElementById('senha').value;
+                if (await fazerLogin(email, senha)) showPage('main');
+                else alert('Email ou senha inválidos!');
+            });
+        } 
+        else if (page === 'cadastro') {
+            app.innerHTML = `
+                <div class="container mt-5 pt-5">
+                    <div class="row justify-content-center">
+                        <div class="col-md-5">
+                            <div class="card card-modern fade-in">
+                                <div class="card-body p-5">
+                                    <h2 class="text-center mb-4">Solicitar Cadastro</h2>
+                                    <form id="cadastroForm">
+                                        <div class="mb-3"><label>Nome Completo</label><input type="text" class="form-control" id="nome" required></div>
+                                        <div class="mb-3"><label>Data de Nascimento</label><input type="date" class="form-control" id="dataNasc" required></div>
+                                        <div class="mb-3"><label>Email</label><input type="email" class="form-control" id="email" required></div>
+                                        <div class="mb-3"><label>Senha (mínimo 6)</label><input type="password" class="form-control" id="senha" required minlength="6"></div>
+                                        <button type="submit" class="btn btn-modern w-100">Solicitar Cadastro</button>
+                                    </form>
+                                    <hr><div class="text-center"><button class="btn btn-link" onclick="showPage('login')">Voltar ao Login</button></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('cadastroForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const nome = document.getElementById('nome').value;
+                const data = document.getElementById('dataNasc').value;
+                const email = document.getElementById('email').value;
+                const senha = document.getElementById('senha').value;
+                try {
+                    await solicitarCadastro(nome, data, email, senha);
+                    alert('Solicitação enviada! Aguarde aprovação.');
+                    showPage('login');
+                } catch (err) { alert(err.message); }
+            });
+        }
+        else if (page === 'main') {
+            renderizarPrincipal();
+        }
+    }
+
+    async function renderizarPrincipal() {
+        const grupos = await getGrupos();
+        const contagens = await getContagens();
+        const compras = await getCompras();
+
+        window._allGrupos = grupos;
+        window._allContagens = contagens;
+        window._allCompras = compras;
+
+        const isAdmin = currentUser.tipo === 'admin';
+        const menuItems = [];
+        if (isAdmin) menuItems.push({ id: 'admin', icon: 'fa-users', label: 'Administração' });
+        if (isAdmin) menuItems.push({ id: 'grupos', icon: 'fa-layer-group', label: 'Grupos' });
+        menuItems.push({ id: 'contagem', icon: 'fa-clipboard-list', label: 'Contagem' });
+        menuItems.push({ id: 'registros', icon: 'fa-history', label: 'Registros' });
+        if (isAdmin) menuItems.push({ id: 'compras', icon: 'fa-shopping-cart', label: 'Compras' });
+        menuItems.push({ id: 'relatorio', icon: 'fa-chart-line', label: 'Relatório Semanal' });
+        menuItems.push({ id: 'relatorioGeral', icon: 'fa-chart-bar', label: 'Relatório Geral' });
+        if (isAdmin) menuItems.push({ id: 'paginaCompras', icon: 'fa-chart-pie', label: 'Gestão de Compras' });
+
+        const app = document.getElementById('app');
+        app.innerHTML = `
+            <nav class="navbar navbar-modern navbar-dark">
+                <div class="container">
+                    <span class="navbar-brand"><i class="fas fa-boxes me-2"></i>Sistema de Estoque</span>
+                    <div class="dropdown">
+                        <button class="btn btn-light dropdown-toggle" data-bs-toggle="dropdown"><i class="fas fa-user me-2"></i>${currentUser.nome}</button>
+                        <ul class="dropdown-menu">
+                            <li><span class="dropdown-item-text">Tipo: ${isAdmin ? 'Admin' : 'Usuário'}</span></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><button class="dropdown-item" onclick="showPage('login')">Sair</button></li>
+                        </ul>
+                    </div>
+                </div>
+            </nav>
+            <div class="container-custom">
+                <div class="mobile-menu-container">
+                    <div class="dropdown w-100">
+                        <button class="btn btn-mobile-menu dropdown-toggle" data-bs-toggle="dropdown">
+                            <i class="fas ${menuItems.find(i => i.id === currentActiveTab)?.icon || 'fa-bars'} me-2"></i>
+                            ${menuItems.find(i => i.id === currentActiveTab)?.label || 'Menu'}
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-custom w-100">
+                            ${menuItems.map(item => `<li><button class="dropdown-item" onclick="mudarAba('${item.id}')"><i class="fas ${item.icon} me-2"></i>${item.label}</button></li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+                <ul class="nav nav-tabs mb-4" id="myTab">
+                    ${isAdmin ? '<li class="nav-item"><button class="nav-link" data-bs-target="#admin" data-bs-toggle="tab">Administração</button></li>' : ''}
+                    ${isAdmin ? '<li class="nav-item"><button class="nav-link" data-bs-target="#grupos" data-bs-toggle="tab">Grupos</button></li>' : ''}
+                    <li class="nav-item"><button class="nav-link ${!isAdmin ? 'active' : ''}" data-bs-target="#contagem" data-bs-toggle="tab">Contagem</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-target="#registros" data-bs-toggle="tab">Registros</button></li>
+                    ${isAdmin ? '<li class="nav-item"><button class="nav-link" data-bs-target="#compras" data-bs-toggle="tab">Compras</button></li>' : ''}
+                    <li class="nav-item"><button class="nav-link" data-bs-target="#relatorio" data-bs-toggle="tab">Relatório Semanal</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-target="#relatorioGeral" data-bs-toggle="tab">Relatório Geral</button></li>
+                    ${isAdmin ? '<li class="nav-item"><button class="nav-link" data-bs-target="#paginaCompras" data-bs-toggle="tab">📊 Gestão de Compras</button></li>' : ''}
+                </ul>
+                <div class="tab-content">
+                    ${isAdmin ? await renderAdminTab() : ''}
+                    ${isAdmin ? await renderGruposTab(grupos) : ''}
+                    ${await renderContagemTab(grupos)}
+                    ${await renderRegistrosTab(contagens)}
+                    ${isAdmin ? await renderComprasTab(grupos) : ''}
+                    ${await renderRelatorioTab(contagens, compras, grupos)}
+                    ${await renderRelatorioGeralTab(grupos)}
+                    ${isAdmin ? await renderPaginaCompras(compras, grupos) : ''}
+                </div>
+            </div>
+        `;
+        document.querySelectorAll('#myTab button').forEach(btn => new bootstrap.Tab(btn));
+        if (currentActiveTab) {
+            const activePane = document.getElementById(currentActiveTab);
+            if (activePane) {
+                document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('show', 'active'));
+                activePane.classList.add('show', 'active');
+            }
+        }
+        if (currentActiveTab === 'relatorio') {
+            setTimeout(() => atualizarRelatorioFiltrado(), 100);
+        } else if (currentActiveTab === 'relatorioGeral') {
+            setTimeout(() => atualizarRelatorioGeral(), 100);
+        }
+    }
+
+    async function renderAdminTab() {
+        const solicitacoes = await getSolicitacoesPendentes();
+        const usuarios = await getTodosUsuarios();
+        return `
+            <div class="tab-pane fade" id="admin">
+                <div class="card card-modern"><div class="card-body">
+                    <h4>Solicitações Pendentes</h4>
+                    ${solicitacoes.length === 0 ? '<div class="alert alert-info">Nenhuma solicitação pendente</div>' : `
+                        <div class="table-responsive"><table class="table table-modern">
+                            <thead><tr><th>Nome</th><th>Email</th><th>Ações</th></tr></thead>
+                            <tbody>${solicitacoes.map(s => `
+                                <tr><td>${s.nome}</td><td>${s.email}</td>
+                                <td><button class="btn btn-success btn-sm me-2" onclick="aprovarUsuarioHandler('${s.id}', 'padrao')">Aprovar Padrão</button>
+                                    <button class="btn btn-warning btn-sm" onclick="aprovarUsuarioHandler('${s.id}', 'admin')">Aprovar Admin</button></td></tr>
+                            `).join('')}</tbody>
+                        </table></div>
+                    `}
+                    <h4 class="mt-4">Usuários do Sistema</h4>
+                    <div class="table-responsive"><table class="table table-modern">
+                        <thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Ações</th></tr></thead>
+                        <tbody>${usuarios.map(u => `
+                            <tr><td>${u.nome}</td><td>${u.email}</td>
+                            <td>${u.tipo === 'admin' ? 'Administrador' : 'Usuário Padrão'}</td>
+                            <td><select class="form-select form-select-sm" id="tipo_${u.id}">
+                                    <option value="padrao" ${u.tipo === 'padrao' ? 'selected' : ''}>Padrão</option>
+                                    <option value="admin" ${u.tipo === 'admin' ? 'selected' : ''}>Admin</option>
+                                </select>
+                                <button class="btn btn-primary btn-sm mt-1" onclick="alterarTipoHandler('${u.id}')">Alterar</button></td></tr>
+                        `).join('')}</tbody>
+                    </table></div>
+                </div></div>
+            </div>
+        `;
+    }
+
+    async function renderGruposTab(grupos) {
+        return `
+            <div class="tab-pane fade" id="grupos">
+                <div class="card card-modern"><div class="card-body">
+                    <button class="btn btn-modern mb-3" onclick="abrirModalGrupo()"><i class="fas fa-plus me-2"></i>Novo Grupo</button>
+                    <div class="row">
+                        ${grupos.map(g => `
+                            <div class="col-md-6 col-lg-4 mb-4">
+                                <div class="card group-card h-100">
+                                    <div class="card-header bg-white d-flex justify-content-between">
+                                        <h5><i class="fas fa-folder-open me-2"></i>${g.nome}</h5>
+                                        <div><button class="btn btn-sm btn-edit-group" onclick="editarGrupo('${g.id}')"><i class="fas fa-edit"></i></button>
+                                        <button class="btn btn-sm btn-danger" onclick="excluirGrupoHandler('${g.id}')"><i class="fas fa-trash"></i></button></div>
+                                    </div>
+                                    <div class="card-body">
+                                        <small>Criado por: ${g.criadoPor}</small><br><small>${g.produtos.length} produtos</small>
+                                        <div class="product-list mt-2">
+                                            ${g.produtos.map((p, idx) => `<div class="product-item"><span>${p}</span><button class="btn btn-sm btn-outline-danger" onclick="removerProdutoHandler('${g.id}', ${idx})"><i class="fas fa-times"></i></button></div>`).join('')}
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-primary w-100 mt-3" onclick="adicionarProdutoAoGrupoUI('${g.id}', '${g.nome}')"><i class="fas fa-plus me-2"></i>Adicionar Produto</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div></div>
+            </div>
+        `;
+    }
+
+    async function renderContagemTab(grupos) {
+        return `
+            <div class="tab-pane fade ${currentUser.tipo !== 'admin' ? 'show active' : ''}" id="contagem">
+                <div class="card card-modern"><div class="card-body">
+                    <h4>Selecione um grupo para contagem</h4>
+                    <div class="row">
+                        ${grupos.map(g => `
+                            <div class="col-md-4 mb-3"><div class="card product-card" onclick="iniciarContagem('${g.id}', '${g.nome}')">
+                                <div class="card-body text-center"><i class="fas fa-box fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div>
+                            </div></div>
+                        `).join('')}
+                    </div>
+                </div></div>
+            </div>
+        `;
+    }
+
+    async function renderRegistrosTab(contagens) {
+        if (contagens.length === 0) return `<div class="tab-pane fade" id="registros"><div class="card card-modern"><div class="card-body text-center"><p>Nenhuma contagem ainda</p></div></div></div>`;
+        return `
+            <div class="tab-pane fade" id="registros">
+                <div class="card card-modern"><div class="card-body">
+                    ${contagens.map(c => `
+                        <div class="card mb-3">
+                            <div class="card-header bg-light"><strong>Usuário:</strong> ${c.usuario} | <strong>Data:</strong> ${new Date(c.data).toLocaleDateString()} | <strong>Hora:</strong> ${c.hora}
+                            ${currentUser.tipo === 'admin' ? `<button class="btn btn-warning btn-sm float-end" onclick="editarContagemHandler('${c.id}')"><i class="fas fa-edit"></i> Editar</button>` : ''}</div>
+                            <div class="card-body"><h5>Grupo: ${c.grupoNome}</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Produto</th><th>Quantidade</th></tr></thead><tbody>
+                                ${Object.entries(c.contagens).map(([prod, qtd]) => `<tr><td>${prod}</td><td>${qtd}</td></tr>`).join('')}
+                            </tbody></table></div></div>
+                        </div>
+                    `).join('')}
+                </div></div>
+            </div>
+        `;
+    }
+
+    async function renderComprasTab(grupos) {
+        return `
+            <div class="tab-pane fade" id="compras">
+                <div class="card card-modern"><div class="card-body">
+                    <h4>Registrar Nova Compra</h4>
+                    <div class="row">
+                        ${grupos.map(g => `
+                            <div class="col-md-4 mb-3"><div class="card product-card" onclick="abrirComprasGrupo('${g.id}', '${g.nome}')">
+                                <div class="card-body text-center"><i class="fas fa-shopping-cart fa-2x mb-2"></i><h5>${g.nome}</h5><p>${g.produtos.length} produtos</p></div>
+                            </div></div>
+                        `).join('')}
+                    </div>
+                </div></div>
+            </div>
+        `;
+    }
+
+    // ========== RELATÓRIO SEMANAL ==========
+    async function renderRelatorioTab(contagens, compras, grupos) {
+        return `
+            <div class="tab-pane fade" id="relatorio">
+                <div class="card card-modern mb-3"><div class="card-body">
+                    <h5><i class="fas fa-filter me-2"></i>Filtros do Relatório Semanal</h5>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <select class="form-control" id="relGrupo">
+                                <option value="">Todos os grupos</option>
+                                ${grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="date" class="form-control" id="relDataInicio" placeholder="Data início das contagens">
+                        </div>
+                        <div class="col-md-3">
+                            <input type="date" class="form-control" id="relDataFim" placeholder="Data fim das contagens">
+                        </div>
+                        <div class="col-md-3">
+                            <button class="btn btn-primary w-100" onclick="atualizarRelatorioFiltrado()"><i class="fas fa-search me-1"></i> Filtrar</button>
+                        </div>
+                        <div class="col-md-3 mt-2">
+                            <button class="btn btn-danger w-100" onclick="gerarPDFRelatorio()"><i class="fas fa-file-pdf me-1"></i> Gerar PDF</button>
+                        </div>
+                    </div>
+                </div></div>
+                <div id="relatorioContent"></div>
+            </div>
+        `;
+    }
+
+    window.atualizarRelatorioFiltrado = () => {
+        const contagens = window._allContagens;
+        const compras = window._allCompras;
+        const grupoFiltro = document.getElementById('relGrupo')?.value || '';
+        const dataInicio = document.getElementById('relDataInicio')?.value || '';
+        const dataFim = document.getElementById('relDataFim')?.value || '';
+
+        let contagensFiltradas = contagens.filter(c => {
+            if (grupoFiltro && c.grupoId !== grupoFiltro) return false;
+            if (dataInicio && new Date(c.data) < new Date(dataInicio)) return false;
+            if (dataFim && new Date(c.data) > new Date(dataFim + 'T23:59:59')) return false;
+            return true;
+        });
+
+        const groupsMap = {};
+        contagensFiltradas.forEach(c => {
+            if (!groupsMap[c.grupoId]) groupsMap[c.grupoId] = { nome: c.grupoNome, contagens: [] };
+            groupsMap[c.grupoId].contagens.push(c);
+        });
+
+        let htmlContent = '';
+        let hasAnyReport = false;
+
+        for (const [grupoId, grupoData] of Object.entries(groupsMap)) {
+            const counts = grupoData.contagens.sort((a,b) => new Date(b.data) - new Date(a.data));
+            if (counts.length < 2) continue;
+
+            const ultima = counts[0];
+            const penultima = counts[1];
+
+            const comprasNoPeriodo = compras.filter(c => {
+                if (grupoFiltro && c.grupoId !== grupoFiltro) return false;
+                const compDate = new Date(c.dataCompra || c.dataRegistro);
+                const penDate = new Date(penultima.data);
+                const ultDate = new Date(ultima.data);
+                return compDate > penDate && compDate < ultDate && c.grupoId === grupoId;
+            });
+
+            let linhas = '';
+            for (const [prod, atual] of Object.entries(ultima.contagens)) {
+                const anterior = penultima.contagens[prod] || 0;
+                const comprasProd = comprasNoPeriodo
+                    .filter(c => c.produtoNome === prod)
+                    .reduce((s, c) => s + c.quantidade, 0);
+                const consumo = (anterior + comprasProd) - atual;
+                linhas += `<tr>
+                    <td>${prod}</td>
+                    <td>${atual}</td>
+                    <td>${anterior}</td>
+                    <td>${comprasProd}</td>
+                    <td class="${consumo < 0 ? 'text-danger' : 'text-success'}">${consumo}</td>
+                </tr>`;
+            }
+
+            htmlContent += `
+                <div class="card card-modern mb-4 relatorio-card">
+                    <div class="card-body">
+                        <h4><i class="fas fa-chart-line me-2"></i>${grupoData.nome}</h4>
+                        <p class="text-muted">
+                            Última: ${new Date(ultima.data).toLocaleDateString()} | Penúltima: ${new Date(penultima.data).toLocaleDateString()}
+                        </p>
+                        <div class="table-responsive">
+                            <table class="table table-modern">
+                                <thead><tr><th>Produto</th><th>Última</th><th>Anterior</th><th>Compras</th><th>Consumo</th></tr></thead>
+                                <tbody>${linhas}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+            hasAnyReport = true;
+        }
+
+        if (!hasAnyReport) {
+            htmlContent = `<div class="card card-modern"><div class="card-body text-center py-5"><i class="fas fa-exclamation-circle fa-3x mb-3 text-muted"></i><h5>Nenhum grupo com duas contagens no período</h5></div></div>`;
+        }
+        const container = document.getElementById('relatorioContent');
+        if (container) container.innerHTML = htmlContent;
+    };
+
+    window.gerarPDFRelatorio = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const cards = document.querySelectorAll('#relatorioContent .relatorio-card');
+        if (cards.length === 0) return alert('Nenhum relatório para gerar PDF.');
+        let y = 15;
+        cards.forEach((card, index) => {
+            const title = card.querySelector('h4')?.innerText || 'Relatório';
+            const subtitle = card.querySelector('p.text-muted')?.innerText || '';
+            const table = card.querySelector('table');
+            const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.innerText);
+            const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => 
+                Array.from(tr.querySelectorAll('td')).map(td => td.innerText)
+            );
+            doc.setFontSize(13);
+            doc.text(title, 14, y); y += 7;
+            doc.setFontSize(9);
+            doc.text(subtitle, 14, y); y += 6;
+            doc.autoTable({
+                startY: y,
+                head: [headers],
+                body: rows,
+                theme: 'striped',
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [102, 126, 234] }
+            });
+            y = doc.lastAutoTable.finalY + 10;
+            if (index < cards.length - 1 && y > 270) { doc.addPage(); y = 15; }
+        });
+        doc.save(`relatorio_semanal_${new Date().toISOString().slice(0,10)}.pdf`);
+    };
+
+    // ========== RELATÓRIO GERAL ==========
+    async function renderRelatorioGeralTab(grupos) {
+        return `
+            <div class="tab-pane fade" id="relatorioGeral">
+                <div class="card card-modern mb-3"><div class="card-body">
+                    <h5><i class="fas fa-filter me-2"></i>Filtros do Relatório Geral</h5>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label">Data Início</label>
+                            <input type="date" class="form-control" id="geralDataInicio">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Data Fim</label>
+                            <input type="date" class="form-control" id="geralDataFim">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Grupo</label>
+                            <select class="form-control" id="geralGrupo" onchange="atualizarProdutosRelatorioGeral()">
+                                <option value="">Todos os grupos</option>
+                                ${grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Produto</label>
+                            <select class="form-control" id="geralProduto">
+                                <option value="">Todos os produtos</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mt-2">
+                            <button class="btn btn-primary w-100" onclick="atualizarRelatorioGeral()"><i class="fas fa-search me-1"></i> Filtrar</button>
+                        </div>
+                        <div class="col-md-3 mt-2">
+                            <button class="btn btn-danger w-100" onclick="gerarPDFRelatorioGeral()"><i class="fas fa-file-pdf me-1"></i> Gerar PDF</button>
+                        </div>
+                    </div>
+                </div></div>
+                <div id="relatorioGeralContent"></div>
+            </div>
+        `;
+    }
+
+    window.atualizarProdutosRelatorioGeral = () => {
+        const grupoId = document.getElementById('geralGrupo')?.value;
+        const produtoSelect = document.getElementById('geralProduto');
+        if (!produtoSelect) return;
+        const grupos = window._allGrupos;
+        let produtos = [];
+        if (grupoId) {
+            const grupo = grupos.find(g => g.id === grupoId);
+            if (grupo) produtos = grupo.produtos;
+        } else {
+            // Todos os produtos de todos os grupos, sem duplicatas
+            const set = new Set();
+            grupos.forEach(g => g.produtos.forEach(p => set.add(p)));
+            produtos = Array.from(set);
+        }
+        produtoSelect.innerHTML = '<option value="">Todos os produtos</option>' + 
+            produtos.map(p => `<option value="${p}">${p}</option>`).join('');
+    };
+
+    window.atualizarRelatorioGeral = () => {
+        const dataInicio = document.getElementById('geralDataInicio')?.value || '';
+        const dataFim = document.getElementById('geralDataFim')?.value || '';
+        const grupoId = document.getElementById('geralGrupo')?.value || '';
+        const produtoNome = document.getElementById('geralProduto')?.value || '';
+
+        const contagens = window._allContagens;
+        const compras = window._allCompras;
+        const grupos = window._allGrupos;
+
+        // Filtrar compras pelo período e grupo/produto
+        let comprasFiltradas = compras.filter(c => {
+            const dataComp = new Date(c.dataCompra || c.dataRegistro);
+            if (dataInicio && dataComp < new Date(dataInicio)) return false;
+            if (dataFim && dataComp > new Date(dataFim + 'T23:59:59')) return false;
+            if (grupoId && c.grupoId !== grupoId) return false;
+            if (produtoNome && c.produtoNome !== produtoNome) return false;
+            return true;
+        });
+
+        // Determinar itens (produto, grupo) a exibir
+        // Se grupo selecionado, considerar apenas produtos daquele grupo (e opcional produto específico)
+        // Se nenhum grupo, listar todos os produtos de todos os grupos que aparecem nas compras ou contagens (mas com foco no filtro)
+        let itens = []; // { grupoId, grupoNome, produto }
+        if (grupoId) {
+            const grupo = grupos.find(g => g.id === grupoId);
+            if (grupo) {
+                const produtosFiltrados = produtoNome ? [produtoNome] : grupo.produtos;
+                produtosFiltrados.forEach(prod => itens.push({ grupoId, grupoNome: grupo.nome, produto: prod }));
+            }
+        } else {
+            // Todos os grupos
+            grupos.forEach(g => {
+                const produtosFiltrados = produtoNome ? [produtoNome] : g.produtos;
+                produtosFiltrados.forEach(prod => {
+                    if (!itens.find(i => i.grupoId === g.id && i.produto === prod)) {
+                        itens.push({ grupoId: g.id, grupoNome: g.nome, produto: prod });
+                    }
+                });
+            });
+        }
+
+        // Se produto específico foi selecionado sem grupo, ainda precisamos de todos os grupos que contêm esse produto
+        if (produtoNome && !grupoId) {
+            itens = [];
+            grupos.forEach(g => {
+                if (g.produtos.includes(produtoNome)) {
+                    itens.push({ grupoId: g.id, grupoNome: g.nome, produto: produtoNome });
+                }
+            });
+        }
+
+        let html = '';
+        let totalGeralValor = 0;
+
+        // Calcular estoque: última contagem do produto (ignorando data)
+        const getEstoque = (grupoId, produto) => {
+            const contagensGrupo = contagens.filter(c => c.grupoId === grupoId);
+            // Ordenar decrescente por data para pegar a mais recente
+            contagensGrupo.sort((a,b) => new Date(b.data) - new Date(a.data));
+            for (let c of contagensGrupo) {
+                if (c.contagens && c.contagens[produto] !== undefined) {
+                    return c.contagens[produto];
+                }
+            }
+            return 0;
+        };
+
+        // Calcular consumo no período: primeira contagem dentro do período + compras - última contagem dentro do período
+        const getConsumo = (grupoId, produto) => {
+            const contagensGrupo = contagens.filter(c => c.grupoId === grupoId);
+            const contagensPeriodo = contagensGrupo.filter(c => {
+                const d = new Date(c.data);
+                if (dataInicio && d < new Date(dataInicio)) return false;
+                if (dataFim && d > new Date(dataFim + 'T23:59:59')) return false;
+                return true;
+            }).sort((a,b) => new Date(a.data) - new Date(b.data));
+
+            if (contagensPeriodo.length === 0) return null;
+
+            const primeira = contagensPeriodo[0].contagens[produto] || 0;
+            const ultima = contagensPeriodo[contagensPeriodo.length-1].contagens[produto] || 0;
+            const comprasQtd = comprasFiltradas
+                .filter(c => c.grupoId === grupoId && c.produtoNome === produto)
+                .reduce((s, c) => s + c.quantidade, 0);
+
+            return (primeira + comprasQtd) - ultima;
+        };
+
+        // Construir tabela agrupada por grupo se não houver grupo específico selecionado? 
+        // Vamos gerar uma tabela única, com colunas: Produto, Grupo, Estoque, Compras (qtd), Consumo, Valor Total Gasto.
+        // Se grupo selecionado, podemos ocultar coluna Grupo.
+        const mostrarGrupo = !grupoId;
+        let rows = [];
+        let totalValorGeral = 0;
+
+        itens.forEach(item => {
+            const comprasItem = comprasFiltradas.filter(c => c.grupoId === item.grupoId && c.produtoNome === item.produto);
+            const qtdComprada = comprasItem.reduce((s, c) => s + c.quantidade, 0);
+            const valorTotalItem = comprasItem.reduce((s, c) => s + (c.valorTotal || 0), 0);
+            const estoque = getEstoque(item.grupoId, item.produto);
+            const consumo = getConsumo(item.grupoId, item.produto);
+
+            rows.push({
+                grupo: item.grupoNome,
+                produto: item.produto,
+                estoque,
+                comprasQtd: qtdComprada,
+                consumo: consumo !== null ? consumo : 'N/D',
+                valorTotal: valorTotalItem
+            });
+            totalValorGeral += valorTotalItem;
+        });
+
+        if (rows.length === 0) {
+            html = `<div class="card card-modern"><div class="card-body text-center py-5"><i class="fas fa-info-circle fa-3x mb-3 text-muted"></i><h5>Nenhum dado encontrado para os filtros aplicados</h5></div></div>`;
+        } else {
+            let tabela = `
+                <div class="table-responsive">
+                    <table class="table table-modern" id="tabelaRelatorioGeral">
+                        <thead><tr>
+                            ${mostrarGrupo ? '<th>Grupo</th>' : ''}
+                            <th>Produto</th>
+                            <th>Estoque</th>
+                            <th>Compras (qtd)</th>
+                            <th>Consumo</th>
+                            <th>Valor Total Gasto</th>
+                        </tr></thead>
+                        <tbody>`;
+            rows.forEach(r => {
+                tabela += `<tr>
+                    ${mostrarGrupo ? `<td>${r.grupo}</td>` : ''}
+                    <td>${r.produto}</td>
+                    <td>${r.estoque}</td>
+                    <td>${r.comprasQtd}</td>
+                    <td>${r.consumo}</td>
+                    <td>R$ ${r.valorTotal.toFixed(2)}</td>
+                </tr>`;
+            });
+            // Se filtro por grupo (grupoId selecionado), adicionar linha de total do grupo
+            if (grupoId) {
+                tabela += `<tr class="table-active fw-bold">
+                    <td colspan="5">Total do Grupo</td>
+                    <td>R$ ${totalValorGeral.toFixed(2)}</td>
+                </tr>`;
+            }
+            tabela += `</tbody></table></div>`;
+            html = `<div class="card card-modern"><div class="card-body">${tabela}</div></div>`;
+        }
+
+        const container = document.getElementById('relatorioGeralContent');
+        if (container) container.innerHTML = html;
+        // Armazenar dados para PDF
+        window._dadosRelatorioGeral = { rows, mostrarGrupo, grupoId, totalValorGeral };
+    };
+
+    window.gerarPDFRelatorioGeral = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('landscape');
+        const dados = window._dadosRelatorioGeral;
+        if (!dados || !dados.rows || dados.rows.length === 0) return alert('Nenhum dado para gerar PDF.');
+
+        const { rows, mostrarGrupo, grupoId } = dados;
+        const headers = mostrarGrupo ? ['Grupo', 'Produto', 'Estoque', 'Compras', 'Consumo', 'Valor Gasto'] : ['Produto', 'Estoque', 'Compras', 'Consumo', 'Valor Gasto'];
+        
+        const body = rows.map(r => {
+            const row = mostrarGrupo ? [r.grupo, r.produto, r.estoque, r.comprasQtd, r.consumo, `R$ ${r.valorTotal.toFixed(2)}`] :
+                [r.produto, r.estoque, r.comprasQtd, r.consumo, `R$ ${r.valorTotal.toFixed(2)}`];
+            return row;
+        });
+
+        if (grupoId) {
+            const totalRow = new Array(headers.length - 1).fill('');
+            totalRow.push(`R$ ${dados.totalValorGeral.toFixed(2)}`);
+            body.push(totalRow);
+        }
+
+        doc.setFontSize(14);
+        doc.text('Relatório Geral', 14, 15);
+        doc.autoTable({
+            startY: 22,
+            head: [headers],
+            body: body,
+            theme: 'grid',
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [102, 126, 234] }
+        });
+        doc.save(`relatorio_geral_${new Date().toISOString().slice(0,10)}.pdf`);
+    };
+
+    // ========== GESTÃO DE COMPRAS (com filtros existentes) ==========
+    async function renderPaginaCompras(compras, grupos) {
+        const totalCompras = compras.length;
+        const valorTotal = compras.reduce((s, c) => s + (c.valorTotal || 0), 0);
+        const totalProdutos = compras.reduce((s, c) => s + (c.quantidade || 0), 0);
+        return `
+            <div class="tab-pane fade" id="paginaCompras">
+                <div class="row mb-4">
+                    <div class="col-md-4"><div class="stats-card"><i class="fas fa-shopping-cart fa-2x"></i><h3>${totalCompras}</h3><p>Total de Compras</p></div></div>
+                    <div class="col-md-4"><div class="stats-card"><i class="fas fa-dollar-sign fa-2x"></i><h3>R$ ${valorTotal.toFixed(2)}</h3><p>Valor Total</p></div></div>
+                    <div class="col-md-4"><div class="stats-card"><i class="fas fa-boxes fa-2x"></i><h3>${totalProdutos}</h3><p>Unidades Compradas</p></div></div>
+                </div>
+                <div class="card card-modern"><div class="card-body">
+                    <div class="d-flex justify-content-between"><h4><i class="fas fa-list-alt me-2"></i>Histórico de Compras</h4><button class="btn btn-modern" onclick="abrirModalNovaCompra()"><i class="fas fa-plus me-2"></i>Nova Compra</button></div>
+                    <div class="filter-bar">
+                        <div class="row g-2">
+                            <div class="col-md-3"><input type="text" class="form-control" id="filterProduto" placeholder="Filtrar produto"></div>
+                            <div class="col-md-3"><input type="text" class="form-control" id="filterDistribuidora" placeholder="Distribuidora"></div>
+                            <div class="col-md-2">
+                                <select class="form-control" id="filterGrupo">
+                                    <option value="">Todos os grupos</option>
+                                    ${grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="col-md-2"><input type="date" class="form-control" id="filterDataInicio" placeholder="Data início"></div>
+                            <div class="col-md-2"><input type="date" class="form-control" id="filterDataFim" placeholder="Data fim"></div>
+                            <div class="col-md-2"><button class="btn btn-primary w-100" onclick="filtrarCompras()"><i class="fas fa-search me-1"></i> Filtrar</button></div>
+                            <div class="col-md-2"><button class="btn btn-danger w-100" onclick="gerarPDFCompras()"><i class="fas fa-file-pdf me-1"></i> Gerar PDF</button></div>
+                        </div>
+                    </div>
+                    <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Qtd</th><th>Valor Unit.</th><th>Total</th><th>Distribuidora</th><th>Usuário</th><th>Ações</th></tr></thead>
+                    <tbody id="comprasTableBody">${compras.map(c => `
+                        <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
+                        <td>${c.quantidade}</td><td>R$ ${c.valor.toFixed(2)}</td><td>R$ ${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td>
+                        <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
+                        <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td></tr>
+                    `).join('')}</tbody></table></div>
+                </div></div>
+            </div>
+        `;
+    }
+
+    // ========== HANDLERS ==========
+    window.mudarAba = (tabId) => {
+        currentActiveTab = tabId;
+        renderizarPrincipal();
+    };
+    window.aprovarUsuarioHandler = async (userId, tipo) => {
+        await aprovarUsuarioNoBanco(userId, tipo);
+        renderizarPrincipal();
+        alert('Usuário aprovado!');
+    };
+    window.alterarTipoHandler = async (userId) => {
+        const select = document.getElementById(`tipo_${userId}`);
+        await mudarTipoUsuario(userId, select.value);
+        renderizarPrincipal();
+        alert('Tipo alterado!');
+    };
+    window.excluirGrupoHandler = async (grupoId) => {
+        if (await excluirGrupoCompleto(grupoId)) {
+            renderizarPrincipal();
+            alert('Grupo excluído!');
+        }
+    };
+    window.removerProdutoHandler = async (grupoId, idx) => {
+        if (confirm('Remover produto?')) {
+            await removerProdutoDoGrupo(grupoId, idx);
+            renderizarPrincipal();
+        }
+    };
+    window.adicionarProdutoAoGrupoUI = (grupoId, grupoNome) => {
+        const modalHtml = `<div class="modal fade" id="modalAdd"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Adicionar Produto - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><input type="text" class="form-control" id="novoProdutoNome" placeholder="Nome do produto"></div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" onclick="confirmarAdicionarProduto('${grupoId}')">Adicionar</button></div></div></div></div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('modalAdd'));
+        modal.show();
+        document.getElementById('modalAdd').addEventListener('hidden.bs.modal', () => document.getElementById('modalAdd')?.remove());
+    };
+    window.confirmarAdicionarProduto = async (grupoId) => {
+        const nome = document.getElementById('novoProdutoNome').value.trim();
+        if (!nome) return alert('Digite o nome');
+        await adicionarProdutoAoGrupo(grupoId, nome);
+        bootstrap.Modal.getInstance(document.getElementById('modalAdd')).hide();
+        renderizarPrincipal();
+        alert('Produto adicionado!');
+    };
+    window.editarGrupo = (grupoId) => { alert('Função editar grupo disponível na versão completa'); };
+    window.abrirModalGrupo = () => {
+        const modalHtml = `<div class="modal fade" id="modalGrupo"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Novo Grupo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><input type="text" class="form-control" id="nomeGrupo" placeholder="Nome do grupo"><div id="produtosContainer"><div class="mb-3"><label>Produto 1</label><input type="text" class="form-control produto-input"></div></div>
+        <button class="btn btn-secondary btn-sm" onclick="adicionarProdutoInput()">+ Adicionar Produto</button></div><div class="modal-footer"><button class="btn btn-primary" onclick="salvarGrupoFirebase()">Salvar</button></div></div></div></div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('modalGrupo'));
+        modal.show();
+        document.getElementById('modalGrupo').addEventListener('hidden.bs.modal', () => document.getElementById('modalGrupo')?.remove());
+    };
+    window.adicionarProdutoInput = () => {
+        const container = document.getElementById('produtosContainer');
+        const idx = container.children.length + 1;
+        const div = document.createElement('div');
+        div.className = 'mb-3';
+        div.innerHTML = `<label>Produto ${idx}</label><input type="text" class="form-control produto-input">`;
+        container.appendChild(div);
+    };
+    window.salvarGrupoFirebase = async () => {
+        const nome = document.getElementById('nomeGrupo').value;
+        const inputs = document.querySelectorAll('.produto-input');
+        const produtos = Array.from(inputs).map(i => i.value).filter(p => p.trim());
+        if (!nome || produtos.length === 0) return alert('Preencha todos os campos');
+        await criarGrupo(nome, produtos);
+        bootstrap.Modal.getInstance(document.getElementById('modalGrupo')).hide();
+        renderizarPrincipal();
+        alert('Grupo criado!');
+    };
+    window.iniciarContagem = (grupoId, grupoNome) => {
+        (async () => {
+            const grupos = await getGrupos();
+            const grupo = grupos.find(g => g.id === grupoId);
+            const modalHtml = `<div class="modal fade" id="modalContagem"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Contagem - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">${grupo.produtos.map((p, i) => `<div class="mb-3"><label>${p}</label><input type="number" step="0.01" class="form-control" id="prod_${i}"></div>`).join('')}</div>
+            <div class="modal-footer"><button class="btn btn-primary" onclick="salvarContagemHandler('${grupoId}', '${grupoNome}', ${grupo.produtos.length})">Salvar</button></div></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = new bootstrap.Modal(document.getElementById('modalContagem'));
+            modal.show();
+            document.getElementById('modalContagem').addEventListener('hidden.bs.modal', () => document.getElementById('modalContagem')?.remove());
+        })();
+    };
+    window.salvarContagemHandler = async (grupoId, grupoNome, num) => {
+        const contagens = {};
+        const grupos = await getGrupos();
+        const grupo = grupos.find(g => g.id === grupoId);
+        for (let i = 0; i < num; i++) {
+            const val = document.getElementById(`prod_${i}`).value;
+            if (!val && val !== 0) return alert('Preencha todos os valores');
+            contagens[grupo.produtos[i]] = parseFloat(val);
+        }
+        await salvarContagemNoBanco(grupoId, grupoNome, contagens);
+        bootstrap.Modal.getInstance(document.getElementById('modalContagem')).hide();
+        renderizarPrincipal();
+        alert('Contagem salva!');
+    };
+    window.editarContagemHandler = (contagemId) => {
+        (async () => {
+            const contagens = await getContagens();
+            const contagem = contagens.find(c => c.id === contagemId);
+            const modalHtml = `<div class="modal fade" id="modalEditCont"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Contagem</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">${Object.entries(contagem.contagens).map(([prod, qtd], i) => `<div class="mb-3"><label>${prod}</label><input type="number" step="0.01" class="form-control" id="edit_${i}" value="${qtd}"></div>`).join('')}</div>
+            <div class="modal-footer"><button class="btn btn-secondary" onclick="continuarEditando()">Continuar Editando</button><button class="btn btn-primary" onclick="finalizarEdicaoHandler('${contagemId}', ${Object.keys(contagem.contagens).length})">Finalizar</button></div></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = new bootstrap.Modal(document.getElementById('modalEditCont'));
+            modal.show();
+            window.currentEditProdutos = Object.keys(contagem.contagens);
+            document.getElementById('modalEditCont').addEventListener('hidden.bs.modal', () => document.getElementById('modalEditCont')?.remove());
+        })();
+    };
+    window.continuarEditando = () => alert('Continue editando');
+    window.finalizarEdicaoHandler = async (contagemId, num) => {
+        if (confirm('Salvar alterações?')) {
+            const novas = {};
+            for (let i = 0; i < num; i++) {
+                novas[window.currentEditProdutos[i]] = parseFloat(document.getElementById(`edit_${i}`).value);
+            }
+            await atualizarContagemNoBanco(contagemId, novas);
+            bootstrap.Modal.getInstance(document.getElementById('modalEditCont')).hide();
+            renderizarPrincipal();
+            alert('Contagem atualizada!');
+        }
+    };
+    window.abrirComprasGrupo = (grupoId, grupoNome) => {
+        if (currentUser.tipo !== 'admin') return alert('Apenas administradores');
+        (async () => {
+            const grupos = await getGrupos();
+            const grupo = grupos.find(g => g.id === grupoId);
+            const modalHtml = `<div class="modal fade" id="modalComprasGrupo"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${grupoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">${grupo.produtos.map(p => `<div class="card mb-2"><div class="card-body"><h6>${p}</h6><button class="btn btn-primary btn-sm" onclick="abrirFormCompra('${grupoId}', '${grupoNome}', '${p}')">Registrar Compra</button></div></div>`).join('')}</div></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = new bootstrap.Modal(document.getElementById('modalComprasGrupo'));
+            modal.show();
+            document.getElementById('modalComprasGrupo').addEventListener('hidden.bs.modal', () => document.getElementById('modalComprasGrupo')?.remove());
+        })();
+    };
+    window.abrirFormCompra = (grupoId, grupoNome, produtoNome) => {
+        const modalHtml = `<div class="modal fade" id="modalFormCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Registrar Compra - ${produtoNome}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><div class="mb-3"><label>Valor Unitário (R$)</label><input type="number" step="0.01" class="form-control" id="valor"></div>
+        <div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidora"></div>
+        <div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidade"></div>
+        <div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompra" value="${new Date().toISOString().split('T')[0]}"></div>
+        <div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscal"></div>
+        <div class="mb-3"><label>Observação</label><textarea class="form-control" id="observacao" rows="2"></textarea></div></div>
+        <div class="modal-footer"><button class="btn btn-secondary" onclick="continuarRegistro()">Continuar</button><button class="btn btn-primary" onclick="salvarCompraHandler('${grupoId}', '${grupoNome}', '${produtoNome}')">Salvar</button></div></div></div></div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('modalFormCompra'));
+        modal.show();
+        document.getElementById('modalFormCompra').addEventListener('hidden.bs.modal', () => document.getElementById('modalFormCompra')?.remove());
+    };
+    window.continuarRegistro = () => alert('Continue preenchendo');
+    window.salvarCompraHandler = async (grupoId, grupoNome, produtoNome) => {
+        if (confirm('Salvar compra?')) {
+            const valor = document.getElementById('valor').value;
+            const distribuidora = document.getElementById('distribuidora').value;
+            const quantidade = document.getElementById('quantidade').value;
+            const dataCompra = document.getElementById('dataCompra').value;
+            const notaFiscal = document.getElementById('notaFiscal').value;
+            const observacao = document.getElementById('observacao').value;
+            if (!valor || !distribuidora || !quantidade) return alert('Preencha os campos obrigatórios');
+            await registrarCompraNoBanco(grupoId, grupoNome, produtoNome, valor, distribuidora, quantidade, dataCompra, notaFiscal, observacao);
+            bootstrap.Modal.getInstance(document.getElementById('modalFormCompra')).hide();
+            renderizarPrincipal();
+            alert('Compra registrada!');
+        }
+    };
+    window.abrirModalNovaCompra = () => {
+        (async () => {
+            const grupos = await getGrupos();
+            const modalHtml = `<div class="modal fade" id="modalNovaCompra"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>Nova Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><div class="row"><div class="col-md-6"><label>Grupo</label><select class="form-control" id="grupoCompra"><option value="">Selecione</option>${grupos.map(g => `<option value="${g.id}" data-nome="${g.nome}">${g.nome}</option>`).join('')}</select></div>
+            <div class="col-md-6"><label>Produto</label><select class="form-control" id="produtoCompra" disabled></select></div>
+            <div class="col-md-6"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="valorCompra"></div>
+            <div class="col-md-6"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="quantidadeCompra"></div>
+            <div class="col-md-6"><label>Distribuidora</label><input type="text" class="form-control" id="distribuidoraCompra"></div>
+            <div class="col-md-6"><label>Data da Compra</label><input type="date" class="form-control" id="dataCompraNova" value="${new Date().toISOString().split('T')[0]}"></div>
+            <div class="col-md-6"><label>Nota Fiscal</label><input type="text" class="form-control" id="notaFiscalCompra"></div>
+            <div class="col-md-12"><label>Observação</label><textarea class="form-control" id="observacaoCompra" rows="2"></textarea></div></div></div>
+            <div class="modal-footer"><button class="btn btn-primary" onclick="salvarNovaCompra()">Salvar</button></div></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = new bootstrap.Modal(document.getElementById('modalNovaCompra'));
+            modal.show();
+            document.getElementById('grupoCompra').addEventListener('change', (e) => {
+                const grupo = grupos.find(g => g.id === e.target.value);
+                const prodSelect = document.getElementById('produtoCompra');
+                if (grupo) {
+                    prodSelect.innerHTML = '<option value="">Selecione</option>' + grupo.produtos.map(p => `<option value="${p}">${p}</option>`).join('');
+                    prodSelect.disabled = false;
+                } else prodSelect.disabled = true;
+            });
+            document.getElementById('modalNovaCompra').addEventListener('hidden.bs.modal', () => document.getElementById('modalNovaCompra')?.remove());
+        })();
+    };
+    window.salvarNovaCompra = async () => {
+        const grupoSelect = document.getElementById('grupoCompra');
+        const grupoId = grupoSelect.value;
+        const grupoNome = grupoSelect.options[grupoSelect.selectedIndex]?.getAttribute('data-nome');
+        const produtoNome = document.getElementById('produtoCompra').value;
+        const valor = document.getElementById('valorCompra').value;
+        const quantidade = document.getElementById('quantidadeCompra').value;
+        const distribuidora = document.getElementById('distribuidoraCompra').value;
+        const dataCompra = document.getElementById('dataCompraNova').value;
+        const notaFiscal = document.getElementById('notaFiscalCompra').value;
+        const observacao = document.getElementById('observacaoCompra').value;
+        if (!grupoId || !produtoNome || !valor || !quantidade || !distribuidora) return alert('Preencha todos os campos');
+        await registrarCompraNoBanco(grupoId, grupoNome, produtoNome, valor, distribuidora, quantidade, dataCompra, notaFiscal, observacao);
+        bootstrap.Modal.getInstance(document.getElementById('modalNovaCompra')).hide();
+        renderizarPrincipal();
+        alert('Compra salva!');
+    };
+    window.excluirCompraUI = async (compraId) => {
+        if (await excluirCompra(compraId)) {
+            renderizarPrincipal();
+            alert('Compra excluída');
+        }
+    };
+    window.editarCompraUI = (compraId) => {
+        (async () => {
+            const compras = await getCompras();
+            const compra = compras.find(c => c.id === compraId);
+            const modalHtml = `<div class="modal fade" id="modalEditCompra"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Editar Compra</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><div class="mb-3"><label>Valor Unitário</label><input type="number" step="0.01" class="form-control" id="editValor" value="${compra.valor}"></div>
+            <div class="mb-3"><label>Quantidade</label><input type="number" step="0.01" class="form-control" id="editQuantidade" value="${compra.quantidade}"></div>
+            <div class="mb-3"><label>Distribuidora</label><input type="text" class="form-control" id="editDistribuidora" value="${compra.distribuidora}"></div>
+            <div class="mb-3"><label>Data da Compra</label><input type="date" class="form-control" id="editDataCompra" value="${compra.dataCompra || compra.dataRegistro.split('T')[0]}"></div>
+            <div class="mb-3"><label>Nota Fiscal</label><input type="text" class="form-control" id="editNotaFiscal" value="${compra.notaFiscal || ''}"></div>
+            <div class="mb-3"><label>Observação</label><textarea class="form-control" id="editObservacao" rows="2">${compra.observacao || ''}</textarea></div></div>
+            <div class="modal-footer"><button class="btn btn-primary" onclick="confirmarEditarCompra('${compraId}')">Salvar</button></div></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = new bootstrap.Modal(document.getElementById('modalEditCompra'));
+            modal.show();
+            document.getElementById('modalEditCompra').addEventListener('hidden.bs.modal', () => document.getElementById('modalEditCompra')?.remove());
+        })();
+    };
+    window.confirmarEditarCompra = async (compraId) => {
+        const novos = {
+            valor: parseFloat(document.getElementById('editValor').value),
+            quantidade: parseFloat(document.getElementById('editQuantidade').value),
+            distribuidora: document.getElementById('editDistribuidora').value,
+            dataCompra: document.getElementById('editDataCompra').value,
+            notaFiscal: document.getElementById('editNotaFiscal').value,
+            observacao: document.getElementById('editObservacao').value
+        };
+        if (await editarCompra(compraId, novos)) {
+            bootstrap.Modal.getInstance(document.getElementById('modalEditCompra')).hide();
+            renderizarPrincipal();
+            alert('Compra atualizada');
+        }
+    };
+    window.filtrarCompras = async () => {
+        const compras = window._allCompras;
+        const filtroProduto = document.getElementById('filterProduto')?.value?.toLowerCase() || '';
+        const filtroDist = document.getElementById('filterDistribuidora')?.value?.toLowerCase() || '';
+        const filtroGrupo = document.getElementById('filterGrupo')?.value || '';
+        const dataInicio = document.getElementById('filterDataInicio')?.value || '';
+        const dataFim = document.getElementById('filterDataFim')?.value || '';
+
+        let filtradas = compras;
+        if (filtroProduto) filtradas = filtradas.filter(c => c.produtoNome.toLowerCase().includes(filtroProduto));
+        if (filtroDist) filtradas = filtradas.filter(c => c.distribuidora.toLowerCase().includes(filtroDist));
+        if (filtroGrupo) filtradas = filtradas.filter(c => c.grupoId === filtroGrupo);
+        if (dataInicio) filtradas = filtradas.filter(c => new Date(c.dataCompra || c.dataRegistro) >= new Date(dataInicio));
+        if (dataFim) filtradas = filtradas.filter(c => new Date(c.dataCompra || c.dataRegistro) <= new Date(dataFim + 'T23:59:59'));
+
+        const tbody = document.getElementById('comprasTableBody');
+        if (!tbody) return;
+        if (filtradas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhuma compra encontrada</td></tr>';
+        } else {
+            tbody.innerHTML = filtradas.map(c => `
+                <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
+                <td>${c.quantidade}</td><td>R$ ${c.valor.toFixed(2)}</td><td>R$ ${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td>
+                <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td></tr>
+            `).join('');
+        }
+    };
+    window.gerarPDFCompras = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('landscape');
+        const tbody = document.getElementById('comprasTableBody');
+        if (!tbody) return alert('Tabela não encontrada.');
+        const rows = Array.from(tbody.querySelectorAll('tr'))
+            .filter(tr => tr.children.length > 1)
+            .map(tr => {
+                const cells = tr.querySelectorAll('td');
+                return Array.from(cells).map(td => td.innerText.trim()).slice(0, -1);
+            });
+        if (rows.length === 0) return alert('Nenhum registro para gerar PDF.');
+        const headers = ['Data', 'Produto', 'Grupo', 'Qtd', 'Valor Unit.', 'Total', 'Distribuidora', 'Usuário'];
+        doc.setFontSize(14);
+        doc.text('Relatório de Compras', 14, 15);
+        doc.autoTable({
+            startY: 22,
+            head: [headers],
+            body: rows,
+            theme: 'grid',
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [102, 126, 234] }
+        });
+        doc.save(`compras_${new Date().toISOString().slice(0,10)}.pdf`);
+    };
+
+    await initializeAdmin();
+    showPage('login');
+    window.showPage = showPage;
+</script>
+</body>
+</html>
