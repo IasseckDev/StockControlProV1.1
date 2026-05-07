@@ -6,7 +6,6 @@
     <title>Sistema de Controle de Estoque - Firebase</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Bibliotecas para PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
      
@@ -72,9 +71,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script type="module">
-    // ========== IMPORTAÇÕES FIREBASE ==========
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-    import { getDatabase, ref, set, get, push, update, remove, onValue } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
+    import { getDatabase, ref, set, get, push, update, remove } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyDqpAqLX-zpJtnL3PjEGZ7eKyEjzElaQ4s",
@@ -92,7 +90,6 @@
     let currentUser = null;
     let currentActiveTab = 'contagem';
 
-    // Dados globais para filtros e PDF
     window._allContagens = [];
     window._allCompras = [];
     window._allGrupos = [];
@@ -400,7 +397,6 @@
         const contagens = await getContagens();
         const compras = await getCompras();
 
-        // Armazenar globalmente
         window._allGrupos = grupos;
         window._allContagens = contagens;
         window._allCompras = compras;
@@ -412,8 +408,9 @@
         menuItems.push({ id: 'contagem', icon: 'fa-clipboard-list', label: 'Contagem' });
         menuItems.push({ id: 'registros', icon: 'fa-history', label: 'Registros' });
         if (isAdmin) menuItems.push({ id: 'compras', icon: 'fa-shopping-cart', label: 'Compras' });
-        menuItems.push({ id: 'relatorio', icon: 'fa-chart-line', label: 'Relatório' });
-        if (isAdmin) menuItems.push({ id: 'paginaCompras', icon: 'fa-chart-bar', label: 'Gestão de Compras' });
+        menuItems.push({ id: 'relatorio', icon: 'fa-chart-line', label: 'Relatório Semanal' });
+        menuItems.push({ id: 'relatorioGeral', icon: 'fa-chart-bar', label: 'Relatório Geral' });
+        if (isAdmin) menuItems.push({ id: 'paginaCompras', icon: 'fa-chart-pie', label: 'Gestão de Compras' });
 
         const app = document.getElementById('app');
         app.innerHTML = `
@@ -448,7 +445,8 @@
                     <li class="nav-item"><button class="nav-link ${!isAdmin ? 'active' : ''}" data-bs-target="#contagem" data-bs-toggle="tab">Contagem</button></li>
                     <li class="nav-item"><button class="nav-link" data-bs-target="#registros" data-bs-toggle="tab">Registros</button></li>
                     ${isAdmin ? '<li class="nav-item"><button class="nav-link" data-bs-target="#compras" data-bs-toggle="tab">Compras</button></li>' : ''}
-                    <li class="nav-item"><button class="nav-link" data-bs-target="#relatorio" data-bs-toggle="tab">Relatório</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-target="#relatorio" data-bs-toggle="tab">Relatório Semanal</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-target="#relatorioGeral" data-bs-toggle="tab">Relatório Geral</button></li>
                     ${isAdmin ? '<li class="nav-item"><button class="nav-link" data-bs-target="#paginaCompras" data-bs-toggle="tab">📊 Gestão de Compras</button></li>' : ''}
                 </ul>
                 <div class="tab-content">
@@ -458,6 +456,7 @@
                     ${await renderRegistrosTab(contagens)}
                     ${isAdmin ? await renderComprasTab(grupos) : ''}
                     ${await renderRelatorioTab(contagens, compras, grupos)}
+                    ${await renderRelatorioGeralTab(grupos)}
                     ${isAdmin ? await renderPaginaCompras(compras, grupos) : ''}
                 </div>
             </div>
@@ -470,9 +469,10 @@
                 activePane.classList.add('show', 'active');
             }
         }
-        // Após renderizar, se estivermos na aba relatório, popular com filtros
         if (currentActiveTab === 'relatorio') {
             setTimeout(() => atualizarRelatorioFiltrado(), 100);
+        } else if (currentActiveTab === 'relatorioGeral') {
+            setTimeout(() => atualizarRelatorioGeral(), 100);
         }
     }
 
@@ -594,54 +594,12 @@
         `;
     }
 
-    // ========== PÁGINA GESTÃO DE COMPRAS (com filtros novos) ==========
-    async function renderPaginaCompras(compras, grupos) {
-        const totalCompras = compras.length;
-        const valorTotal = compras.reduce((s, c) => s + (c.valorTotal || 0), 0);
-        const totalProdutos = compras.reduce((s, c) => s + (c.quantidade || 0), 0);
-        return `
-            <div class="tab-pane fade" id="paginaCompras">
-                <div class="row mb-4">
-                    <div class="col-md-4"><div class="stats-card"><i class="fas fa-shopping-cart fa-2x"></i><h3>${totalCompras}</h3><p>Total de Compras</p></div></div>
-                    <div class="col-md-4"><div class="stats-card"><i class="fas fa-dollar-sign fa-2x"></i><h3>R$ ${valorTotal.toFixed(2)}</h3><p>Valor Total</p></div></div>
-                    <div class="col-md-4"><div class="stats-card"><i class="fas fa-boxes fa-2x"></i><h3>${totalProdutos}</h3><p>Unidades Compradas</p></div></div>
-                </div>
-                <div class="card card-modern"><div class="card-body">
-                    <div class="d-flex justify-content-between"><h4><i class="fas fa-list-alt me-2"></i>Histórico de Compras</h4><button class="btn btn-modern" onclick="abrirModalNovaCompra()"><i class="fas fa-plus me-2"></i>Nova Compra</button></div>
-                    <div class="filter-bar">
-                        <div class="row g-2">
-                            <div class="col-md-3"><input type="text" class="form-control" id="filterProduto" placeholder="Filtrar produto"></div>
-                            <div class="col-md-3"><input type="text" class="form-control" id="filterDistribuidora" placeholder="Distribuidora"></div>
-                            <div class="col-md-2">
-                                <select class="form-control" id="filterGrupo">
-                                    <option value="">Todos os grupos</option>
-                                    ${grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div class="col-md-2"><input type="date" class="form-control" id="filterDataInicio" placeholder="Data início"></div>
-                            <div class="col-md-2"><input type="date" class="form-control" id="filterDataFim" placeholder="Data fim"></div>
-                            <div class="col-md-2"><button class="btn btn-primary w-100" onclick="filtrarCompras()"><i class="fas fa-search me-1"></i> Filtrar</button></div>
-                            <div class="col-md-2"><button class="btn btn-danger w-100" onclick="gerarPDFCompras()"><i class="fas fa-file-pdf me-1"></i> Gerar PDF</button></div>
-                        </div>
-                    </div>
-                    <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Qtd</th><th>Valor Unit.</th><th>Total</th><th>Distribuidora</th><th>Usuário</th><th>Ações</th></tr></thead>
-                    <tbody id="comprasTableBody">${compras.map(c => `
-                        <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
-                        <td>${c.quantidade}</td><td>R$ ${c.valor.toFixed(2)}</td><td>R$ ${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td>
-                        <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
-                        <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td></tr>
-                    `).join('')}</tbody></table></div>
-                </div></div>
-            </div>
-        `;
-    }
-
-    // ========== RELATÓRIO (com filtros novos e PDF) ==========
+    // ========== RELATÓRIO SEMANAL ==========
     async function renderRelatorioTab(contagens, compras, grupos) {
         return `
             <div class="tab-pane fade" id="relatorio">
                 <div class="card card-modern mb-3"><div class="card-body">
-                    <h5><i class="fas fa-filter me-2"></i>Filtros do Relatório</h5>
+                    <h5><i class="fas fa-filter me-2"></i>Filtros do Relatório Semanal</h5>
                     <div class="row g-2">
                         <div class="col-md-3">
                             <select class="form-control" id="relGrupo">
@@ -668,7 +626,6 @@
         `;
     }
 
-    // Função global para atualizar a área de relatório com base nos filtros
     window.atualizarRelatorioFiltrado = () => {
         const contagens = window._allContagens;
         const compras = window._allCompras;
@@ -676,7 +633,6 @@
         const dataInicio = document.getElementById('relDataInicio')?.value || '';
         const dataFim = document.getElementById('relDataFim')?.value || '';
 
-        // Filtrar contagens por grupo e datas
         let contagensFiltradas = contagens.filter(c => {
             if (grupoFiltro && c.grupoId !== grupoFiltro) return false;
             if (dataInicio && new Date(c.data) < new Date(dataInicio)) return false;
@@ -684,7 +640,6 @@
             return true;
         });
 
-        // Agrupar por grupo
         const groupsMap = {};
         contagensFiltradas.forEach(c => {
             if (!groupsMap[c.grupoId]) groupsMap[c.grupoId] = { nome: c.grupoNome, contagens: [] };
@@ -728,16 +683,13 @@
             htmlContent += `
                 <div class="card card-modern mb-4 relatorio-card">
                     <div class="card-body">
-                        <h4><i class="fas fa-chart-line me-2"></i>Relatório de Consumo - ${grupoData.nome}</h4>
+                        <h4><i class="fas fa-chart-line me-2"></i>${grupoData.nome}</h4>
                         <p class="text-muted">
-                            Última contagem em ${new Date(ultima.data).toLocaleDateString()} | 
-                            Penúltima em ${new Date(penultima.data).toLocaleDateString()}
+                            Última: ${new Date(ultima.data).toLocaleDateString()} | Penúltima: ${new Date(penultima.data).toLocaleDateString()}
                         </p>
                         <div class="table-responsive">
                             <table class="table table-modern">
-                                <thead>
-                                    <tr><th>Produto</th><th>Última</th><th>Anterior</th><th>Compras</th><th>Consumo</th></tr>
-                                </thead>
+                                <thead><tr><th>Produto</th><th>Última</th><th>Anterior</th><th>Compras</th><th>Consumo</th></tr></thead>
                                 <tbody>${linhas}</tbody>
                             </table>
                         </div>
@@ -748,49 +700,10 @@
         }
 
         if (!hasAnyReport) {
-            htmlContent = `
-                <div class="card card-modern">
-                    <div class="card-body text-center py-5">
-                        <i class="fas fa-exclamation-circle fa-3x mb-3 text-muted"></i>
-                        <h5>Nenhum grupo possui duas contagens no período selecionado</h5>
-                    </div>
-                </div>
-            `;
+            htmlContent = `<div class="card card-modern"><div class="card-body text-center py-5"><i class="fas fa-exclamation-circle fa-3x mb-3 text-muted"></i><h5>Nenhum grupo com duas contagens no período</h5></div></div>`;
         }
         const container = document.getElementById('relatorioContent');
         if (container) container.innerHTML = htmlContent;
-    };
-
-    // ========== FUNÇÕES DE PDF ==========
-    window.gerarPDFCompras = () => {
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF('landscape');
-        // Obter dados da tabela atual
-        const tbody = document.getElementById('comprasTableBody');
-        if (!tbody) return alert('Tabela não encontrada.');
-        const rows = Array.from(tbody.querySelectorAll('tr'))
-            .filter(tr => tr.children.length > 1) // ignora mensagem "Nenhuma compra"
-            .map(tr => {
-                const cells = tr.querySelectorAll('td');
-                return Array.from(cells).map(td => td.innerText.trim()).slice(0, -1); // remove coluna ações
-            });
-
-        if (rows.length === 0) return alert('Nenhum registro para gerar PDF.');
-
-        const headers = ['Data', 'Produto', 'Grupo', 'Qtd', 'Valor Unit.', 'Total', 'Distribuidora', 'Usuário'];
-        const tableData = rows;
-
-        doc.setFontSize(14);
-        doc.text('Relatório de Compras', 14, 15);
-        doc.autoTable({
-            startY: 22,
-            head: [headers],
-            body: tableData,
-            theme: 'grid',
-            styles: { fontSize: 8 },
-            headStyles: { fillColor: [102, 126, 234] }
-        });
-        doc.save(`compras_${new Date().toISOString().slice(0,10)}.pdf`);
     };
 
     window.gerarPDFRelatorio = () => {
@@ -798,7 +711,6 @@
         const doc = new jsPDF();
         const cards = document.querySelectorAll('#relatorioContent .relatorio-card');
         if (cards.length === 0) return alert('Nenhum relatório para gerar PDF.');
-
         let y = 15;
         cards.forEach((card, index) => {
             const title = card.querySelector('h4')?.innerText || 'Relatório';
@@ -808,13 +720,10 @@
             const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => 
                 Array.from(tr.querySelectorAll('td')).map(td => td.innerText)
             );
-
             doc.setFontSize(13);
-            doc.text(title, 14, y);
-            y += 7;
+            doc.text(title, 14, y); y += 7;
             doc.setFontSize(9);
-            doc.text(subtitle, 14, y);
-            y += 6;
+            doc.text(subtitle, 14, y); y += 6;
             doc.autoTable({
                 startY: y,
                 head: [headers],
@@ -824,13 +733,302 @@
                 headStyles: { fillColor: [102, 126, 234] }
             });
             y = doc.lastAutoTable.finalY + 10;
-            if (index < cards.length - 1 && y > 270) {
-                doc.addPage();
-                y = 15;
-            }
+            if (index < cards.length - 1 && y > 270) { doc.addPage(); y = 15; }
         });
-        doc.save(`relatorio_consumo_${new Date().toISOString().slice(0,10)}.pdf`);
+        doc.save(`relatorio_semanal_${new Date().toISOString().slice(0,10)}.pdf`);
     };
+
+    // ========== RELATÓRIO GERAL ==========
+    async function renderRelatorioGeralTab(grupos) {
+        return `
+            <div class="tab-pane fade" id="relatorioGeral">
+                <div class="card card-modern mb-3"><div class="card-body">
+                    <h5><i class="fas fa-filter me-2"></i>Filtros do Relatório Geral</h5>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label">Data Início</label>
+                            <input type="date" class="form-control" id="geralDataInicio">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Data Fim</label>
+                            <input type="date" class="form-control" id="geralDataFim">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Grupo</label>
+                            <select class="form-control" id="geralGrupo" onchange="atualizarProdutosRelatorioGeral()">
+                                <option value="">Todos os grupos</option>
+                                ${grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Produto</label>
+                            <select class="form-control" id="geralProduto">
+                                <option value="">Todos os produtos</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mt-2">
+                            <button class="btn btn-primary w-100" onclick="atualizarRelatorioGeral()"><i class="fas fa-search me-1"></i> Filtrar</button>
+                        </div>
+                        <div class="col-md-3 mt-2">
+                            <button class="btn btn-danger w-100" onclick="gerarPDFRelatorioGeral()"><i class="fas fa-file-pdf me-1"></i> Gerar PDF</button>
+                        </div>
+                    </div>
+                </div></div>
+                <div id="relatorioGeralContent"></div>
+            </div>
+        `;
+    }
+
+    window.atualizarProdutosRelatorioGeral = () => {
+        const grupoId = document.getElementById('geralGrupo')?.value;
+        const produtoSelect = document.getElementById('geralProduto');
+        if (!produtoSelect) return;
+        const grupos = window._allGrupos;
+        let produtos = [];
+        if (grupoId) {
+            const grupo = grupos.find(g => g.id === grupoId);
+            if (grupo) produtos = grupo.produtos;
+        } else {
+            // Todos os produtos de todos os grupos, sem duplicatas
+            const set = new Set();
+            grupos.forEach(g => g.produtos.forEach(p => set.add(p)));
+            produtos = Array.from(set);
+        }
+        produtoSelect.innerHTML = '<option value="">Todos os produtos</option>' + 
+            produtos.map(p => `<option value="${p}">${p}</option>`).join('');
+    };
+
+    window.atualizarRelatorioGeral = () => {
+        const dataInicio = document.getElementById('geralDataInicio')?.value || '';
+        const dataFim = document.getElementById('geralDataFim')?.value || '';
+        const grupoId = document.getElementById('geralGrupo')?.value || '';
+        const produtoNome = document.getElementById('geralProduto')?.value || '';
+
+        const contagens = window._allContagens;
+        const compras = window._allCompras;
+        const grupos = window._allGrupos;
+
+        // Filtrar compras pelo período e grupo/produto
+        let comprasFiltradas = compras.filter(c => {
+            const dataComp = new Date(c.dataCompra || c.dataRegistro);
+            if (dataInicio && dataComp < new Date(dataInicio)) return false;
+            if (dataFim && dataComp > new Date(dataFim + 'T23:59:59')) return false;
+            if (grupoId && c.grupoId !== grupoId) return false;
+            if (produtoNome && c.produtoNome !== produtoNome) return false;
+            return true;
+        });
+
+        // Determinar itens (produto, grupo) a exibir
+        // Se grupo selecionado, considerar apenas produtos daquele grupo (e opcional produto específico)
+        // Se nenhum grupo, listar todos os produtos de todos os grupos que aparecem nas compras ou contagens (mas com foco no filtro)
+        let itens = []; // { grupoId, grupoNome, produto }
+        if (grupoId) {
+            const grupo = grupos.find(g => g.id === grupoId);
+            if (grupo) {
+                const produtosFiltrados = produtoNome ? [produtoNome] : grupo.produtos;
+                produtosFiltrados.forEach(prod => itens.push({ grupoId, grupoNome: grupo.nome, produto: prod }));
+            }
+        } else {
+            // Todos os grupos
+            grupos.forEach(g => {
+                const produtosFiltrados = produtoNome ? [produtoNome] : g.produtos;
+                produtosFiltrados.forEach(prod => {
+                    if (!itens.find(i => i.grupoId === g.id && i.produto === prod)) {
+                        itens.push({ grupoId: g.id, grupoNome: g.nome, produto: prod });
+                    }
+                });
+            });
+        }
+
+        // Se produto específico foi selecionado sem grupo, ainda precisamos de todos os grupos que contêm esse produto
+        if (produtoNome && !grupoId) {
+            itens = [];
+            grupos.forEach(g => {
+                if (g.produtos.includes(produtoNome)) {
+                    itens.push({ grupoId: g.id, grupoNome: g.nome, produto: produtoNome });
+                }
+            });
+        }
+
+        let html = '';
+        let totalGeralValor = 0;
+
+        // Calcular estoque: última contagem do produto (ignorando data)
+        const getEstoque = (grupoId, produto) => {
+            const contagensGrupo = contagens.filter(c => c.grupoId === grupoId);
+            // Ordenar decrescente por data para pegar a mais recente
+            contagensGrupo.sort((a,b) => new Date(b.data) - new Date(a.data));
+            for (let c of contagensGrupo) {
+                if (c.contagens && c.contagens[produto] !== undefined) {
+                    return c.contagens[produto];
+                }
+            }
+            return 0;
+        };
+
+        // Calcular consumo no período: primeira contagem dentro do período + compras - última contagem dentro do período
+        const getConsumo = (grupoId, produto) => {
+            const contagensGrupo = contagens.filter(c => c.grupoId === grupoId);
+            const contagensPeriodo = contagensGrupo.filter(c => {
+                const d = new Date(c.data);
+                if (dataInicio && d < new Date(dataInicio)) return false;
+                if (dataFim && d > new Date(dataFim + 'T23:59:59')) return false;
+                return true;
+            }).sort((a,b) => new Date(a.data) - new Date(b.data));
+
+            if (contagensPeriodo.length === 0) return null;
+
+            const primeira = contagensPeriodo[0].contagens[produto] || 0;
+            const ultima = contagensPeriodo[contagensPeriodo.length-1].contagens[produto] || 0;
+            const comprasQtd = comprasFiltradas
+                .filter(c => c.grupoId === grupoId && c.produtoNome === produto)
+                .reduce((s, c) => s + c.quantidade, 0);
+
+            return (primeira + comprasQtd) - ultima;
+        };
+
+        // Construir tabela agrupada por grupo se não houver grupo específico selecionado? 
+        // Vamos gerar uma tabela única, com colunas: Produto, Grupo, Estoque, Compras (qtd), Consumo, Valor Total Gasto.
+        // Se grupo selecionado, podemos ocultar coluna Grupo.
+        const mostrarGrupo = !grupoId;
+        let rows = [];
+        let totalValorGeral = 0;
+
+        itens.forEach(item => {
+            const comprasItem = comprasFiltradas.filter(c => c.grupoId === item.grupoId && c.produtoNome === item.produto);
+            const qtdComprada = comprasItem.reduce((s, c) => s + c.quantidade, 0);
+            const valorTotalItem = comprasItem.reduce((s, c) => s + (c.valorTotal || 0), 0);
+            const estoque = getEstoque(item.grupoId, item.produto);
+            const consumo = getConsumo(item.grupoId, item.produto);
+
+            rows.push({
+                grupo: item.grupoNome,
+                produto: item.produto,
+                estoque,
+                comprasQtd: qtdComprada,
+                consumo: consumo !== null ? consumo : 'N/D',
+                valorTotal: valorTotalItem
+            });
+            totalValorGeral += valorTotalItem;
+        });
+
+        if (rows.length === 0) {
+            html = `<div class="card card-modern"><div class="card-body text-center py-5"><i class="fas fa-info-circle fa-3x mb-3 text-muted"></i><h5>Nenhum dado encontrado para os filtros aplicados</h5></div></div>`;
+        } else {
+            let tabela = `
+                <div class="table-responsive">
+                    <table class="table table-modern" id="tabelaRelatorioGeral">
+                        <thead><tr>
+                            ${mostrarGrupo ? '<th>Grupo</th>' : ''}
+                            <th>Produto</th>
+                            <th>Estoque</th>
+                            <th>Compras (qtd)</th>
+                            <th>Consumo</th>
+                            <th>Valor Total Gasto</th>
+                        </tr></thead>
+                        <tbody>`;
+            rows.forEach(r => {
+                tabela += `<tr>
+                    ${mostrarGrupo ? `<td>${r.grupo}</td>` : ''}
+                    <td>${r.produto}</td>
+                    <td>${r.estoque}</td>
+                    <td>${r.comprasQtd}</td>
+                    <td>${r.consumo}</td>
+                    <td>R$ ${r.valorTotal.toFixed(2)}</td>
+                </tr>`;
+            });
+            // Se filtro por grupo (grupoId selecionado), adicionar linha de total do grupo
+            if (grupoId) {
+                tabela += `<tr class="table-active fw-bold">
+                    <td colspan="5">Total do Grupo</td>
+                    <td>R$ ${totalValorGeral.toFixed(2)}</td>
+                </tr>`;
+            }
+            tabela += `</tbody></table></div>`;
+            html = `<div class="card card-modern"><div class="card-body">${tabela}</div></div>`;
+        }
+
+        const container = document.getElementById('relatorioGeralContent');
+        if (container) container.innerHTML = html;
+        // Armazenar dados para PDF
+        window._dadosRelatorioGeral = { rows, mostrarGrupo, grupoId, totalValorGeral };
+    };
+
+    window.gerarPDFRelatorioGeral = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('landscape');
+        const dados = window._dadosRelatorioGeral;
+        if (!dados || !dados.rows || dados.rows.length === 0) return alert('Nenhum dado para gerar PDF.');
+
+        const { rows, mostrarGrupo, grupoId } = dados;
+        const headers = mostrarGrupo ? ['Grupo', 'Produto', 'Estoque', 'Compras', 'Consumo', 'Valor Gasto'] : ['Produto', 'Estoque', 'Compras', 'Consumo', 'Valor Gasto'];
+        
+        const body = rows.map(r => {
+            const row = mostrarGrupo ? [r.grupo, r.produto, r.estoque, r.comprasQtd, r.consumo, `R$ ${r.valorTotal.toFixed(2)}`] :
+                [r.produto, r.estoque, r.comprasQtd, r.consumo, `R$ ${r.valorTotal.toFixed(2)}`];
+            return row;
+        });
+
+        if (grupoId) {
+            const totalRow = new Array(headers.length - 1).fill('');
+            totalRow.push(`R$ ${dados.totalValorGeral.toFixed(2)}`);
+            body.push(totalRow);
+        }
+
+        doc.setFontSize(14);
+        doc.text('Relatório Geral', 14, 15);
+        doc.autoTable({
+            startY: 22,
+            head: [headers],
+            body: body,
+            theme: 'grid',
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [102, 126, 234] }
+        });
+        doc.save(`relatorio_geral_${new Date().toISOString().slice(0,10)}.pdf`);
+    };
+
+    // ========== GESTÃO DE COMPRAS (com filtros existentes) ==========
+    async function renderPaginaCompras(compras, grupos) {
+        const totalCompras = compras.length;
+        const valorTotal = compras.reduce((s, c) => s + (c.valorTotal || 0), 0);
+        const totalProdutos = compras.reduce((s, c) => s + (c.quantidade || 0), 0);
+        return `
+            <div class="tab-pane fade" id="paginaCompras">
+                <div class="row mb-4">
+                    <div class="col-md-4"><div class="stats-card"><i class="fas fa-shopping-cart fa-2x"></i><h3>${totalCompras}</h3><p>Total de Compras</p></div></div>
+                    <div class="col-md-4"><div class="stats-card"><i class="fas fa-dollar-sign fa-2x"></i><h3>R$ ${valorTotal.toFixed(2)}</h3><p>Valor Total</p></div></div>
+                    <div class="col-md-4"><div class="stats-card"><i class="fas fa-boxes fa-2x"></i><h3>${totalProdutos}</h3><p>Unidades Compradas</p></div></div>
+                </div>
+                <div class="card card-modern"><div class="card-body">
+                    <div class="d-flex justify-content-between"><h4><i class="fas fa-list-alt me-2"></i>Histórico de Compras</h4><button class="btn btn-modern" onclick="abrirModalNovaCompra()"><i class="fas fa-plus me-2"></i>Nova Compra</button></div>
+                    <div class="filter-bar">
+                        <div class="row g-2">
+                            <div class="col-md-3"><input type="text" class="form-control" id="filterProduto" placeholder="Filtrar produto"></div>
+                            <div class="col-md-3"><input type="text" class="form-control" id="filterDistribuidora" placeholder="Distribuidora"></div>
+                            <div class="col-md-2">
+                                <select class="form-control" id="filterGrupo">
+                                    <option value="">Todos os grupos</option>
+                                    ${grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="col-md-2"><input type="date" class="form-control" id="filterDataInicio" placeholder="Data início"></div>
+                            <div class="col-md-2"><input type="date" class="form-control" id="filterDataFim" placeholder="Data fim"></div>
+                            <div class="col-md-2"><button class="btn btn-primary w-100" onclick="filtrarCompras()"><i class="fas fa-search me-1"></i> Filtrar</button></div>
+                            <div class="col-md-2"><button class="btn btn-danger w-100" onclick="gerarPDFCompras()"><i class="fas fa-file-pdf me-1"></i> Gerar PDF</button></div>
+                        </div>
+                    </div>
+                    <div class="table-responsive"><table class="table table-modern"><thead><tr><th>Data</th><th>Produto</th><th>Grupo</th><th>Qtd</th><th>Valor Unit.</th><th>Total</th><th>Distribuidora</th><th>Usuário</th><th>Ações</th></tr></thead>
+                    <tbody id="comprasTableBody">${compras.map(c => `
+                        <tr><td>${new Date(c.dataCompra || c.dataRegistro).toLocaleDateString('pt-BR')}</td><td>${c.produtoNome}</td><td>${c.grupoNome}</td>
+                        <td>${c.quantidade}</td><td>R$ ${c.valor.toFixed(2)}</td><td>R$ ${c.valorTotal.toFixed(2)}</td><td>${c.distribuidora}</td><td>${c.usuario}</td>
+                        <td><button class="btn btn-sm btn-warning" onclick="editarCompraUI('${c.id}')"><i class="fas fa-edit"></i></button>
+                        <button class="btn btn-sm btn-danger" onclick="excluirCompraUI('${c.id}')"><i class="fas fa-trash"></i></button></td></tr>
+                    `).join('')}</tbody></table></div>
+                </div></div>
+            </div>
+        `;
+    }
 
     // ========== HANDLERS ==========
     window.mudarAba = (tabId) => {
@@ -1113,8 +1311,32 @@
             `).join('');
         }
     };
+    window.gerarPDFCompras = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('landscape');
+        const tbody = document.getElementById('comprasTableBody');
+        if (!tbody) return alert('Tabela não encontrada.');
+        const rows = Array.from(tbody.querySelectorAll('tr'))
+            .filter(tr => tr.children.length > 1)
+            .map(tr => {
+                const cells = tr.querySelectorAll('td');
+                return Array.from(cells).map(td => td.innerText.trim()).slice(0, -1);
+            });
+        if (rows.length === 0) return alert('Nenhum registro para gerar PDF.');
+        const headers = ['Data', 'Produto', 'Grupo', 'Qtd', 'Valor Unit.', 'Total', 'Distribuidora', 'Usuário'];
+        doc.setFontSize(14);
+        doc.text('Relatório de Compras', 14, 15);
+        doc.autoTable({
+            startY: 22,
+            head: [headers],
+            body: rows,
+            theme: 'grid',
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [102, 126, 234] }
+        });
+        doc.save(`compras_${new Date().toISOString().slice(0,10)}.pdf`);
+    };
 
-    // Inicialização
     await initializeAdmin();
     showPage('login');
     window.showPage = showPage;
